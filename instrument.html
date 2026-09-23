@@ -1,0 +1,2014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BFI-2-XS — Magnitude Scaling vs Category Rating</title>
+<style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:min(1700px,96vw);margin:0 auto;padding:16px;background:#f5f5f5;color:#333;}
+    .container{background:#fff;padding:26px 30px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.1);}
+    /* One type scale. Headings step down 24/20/18; all participant-facing prose is 17px.
+       Deliberate exceptions, each because matching the body size would be worse:
+       .statement and .bignum are STIMULI and must dominate; .cfg is researcher-only and is
+       held smaller so it recedes; grid headers, dense result tables and raw JSON stay small
+       so they fit their columns. */
+    /* TWO participant-facing sizes. Everything on a task screen is either the
+       STIMULUS (the thing being judged or asked) or body text. Hierarchy comes from
+       WEIGHT and a single muted grey, never from a third size -- reaching for a new
+       size every time something needed to feel different is how this got to six
+       sizes on one screen. --fs-h1 survives for the setup screen only; --fs-cfg is
+       researcher-only. h2/h3/minor are kept as aliases so existing rules collapse
+       onto the two sizes instead of needing to be found and rewritten. */
+    :root{--fs-stimulus:22px;--fs-body:17px;
+          --fs-h2:var(--fs-stimulus);--fs-h3:var(--fs-body);--fs-minor:var(--fs-body);
+          --fs-h1:24px;--fs-cfg:14px;
+          --ink:#1a1a1a;--ink-muted:#6b6b6b;}
+    h1{font-size:var(--fs-h1);margin-top:0;line-height:1.3;}
+    h2{font-size:var(--fs-h2);margin-top:0;line-height:1.35;font-weight:600;color:var(--ink);}
+    h3{font-size:var(--fs-h3);margin:16px 0 6px;line-height:1.4;font-weight:600;color:var(--ink);}
+    .instruction{color:var(--ink-muted);font-size:var(--fs-body);line-height:1.6;margin:14px 0;max-width:none;}
+    /* One readable column. Without a cap the prose wrapped at 62ch while the
+       canvas centred itself in the full width, so the text sat far left and used
+       about half the screen while the stimulus floated elsewhere. */
+    .phase{margin:22px 0;padding:20px 24px;border-radius:4px;max-width:1000px;}
+    .phase.hidden{display:none;}
+    /* The left border is the ONLY place the modality colour appears on a task
+       screen. It still marks a change of modality (pilot note 48) without also
+       tinting the background, a badge and a button at the same time. */
+    .phase.line{background:#fff;border-left:4px solid #2f6fd0;}
+    .phase.area{background:#fff;border-left:4px solid #d2691e;}
+    .phase.loud{background:#fff;border-left:4px solid #6a3fb5;}
+    .phase.op{background:#fff;border-left:4px solid #159e79;}
+    .phase.neutral{background:#fafafa;border-left:4px solid #bbb;}
+    /* A coloured chip, grey caps and an orange badge used to stack three status
+       indicators in three styles above every trial. They are now one muted line;
+       .stage-tag and .progress keep their names so the text catalogue and the JS
+       that writes them are unchanged. Only the part that changes MEANING (the
+       anchor badge) still carries weight. */
+    .status{font-size:var(--fs-body);color:var(--ink-muted);margin:0 0 14px;line-height:1.4;}
+    .stage-tag{display:inline;font-size:inherit;color:inherit;background:none;padding:0;letter-spacing:0;border-radius:0;margin:0;}
+    .stage-tag.line,.stage-tag.area,.stage-tag.loud,.stage-tag.op,.stage-tag.neutral{background:none;}
+    .progress{display:inline;font-size:inherit;color:inherit;letter-spacing:0;margin:0;}
+    /* Padding rather than spaces inside content: whitespace at the edges of a
+       generated string collapses, which ran the three parts together. */
+    .status .stage-tag:not(:empty)+.progress:not(:empty)::before{content:"\00b7";padding:0 .45em;}
+    .anchorbadge{display:inline;background:none;color:inherit;font-weight:600;font-size:inherit;padding:0;border-radius:0;margin-left:0;}
+    .anchorbadge::before{content:"\00b7";padding:0 .45em;font-weight:400;}
+    /* cfgProgress, off by default: the counters help when piloting but are one
+       more thing for a participant to read, and no part of the task needs them. */
+    body.noprogress .status,body.noprogress .stage-tag{display:none;}
+    .hint{font-size:var(--fs-minor);color:var(--ink-muted);margin-top:4px;line-height:1.5;}
+    .statement{font-size:22px;font-weight:600;color:#222;margin:8px 0 18px 0;line-height:1.4;}
+    /* A single action colour. Colouring buttons per block made the button compete
+       with the left border for the same signal, and made green mean "button" as well
+       as "number". Slate is clearly actionable without being a modality hue. */
+    button{color:#fff;border:none;padding:10px 18px;border-radius:4px;cursor:pointer;font-size:var(--fs-minor);margin:6px 4px 0 0;background:#37474f;}
+    button:hover{filter:brightness(.93);}button:disabled{background:#ccc !important;cursor:not-allowed;}
+    /* Kept as no-ops: the classes are applied from a dozen places and the colour now
+       lives only on the phase border. */
+    .btn-line,.btn-area,.btn-loud,.btn-op{background:#37474f;}
+    button.secondary{background:#666;}button.play{background:#37474f;}button.play.active{background:#d9534f;}
+    /* Was amber, which is the warning colour. */
+    button.ab{background:#37474f;font-weight:600;}
+    button.adjust{background:#eee;color:#333;font-size:22px;font-weight:600;width:60px;height:50px;user-select:none;touch-action:none;}
+    button.adjust:active{background:#37474f;color:#fff;}
+    button.dir{background:#eee;color:#333;padding:12px 20px;}button.dir.sel{background:#37474f;color:#fff;}
+    .controls-row{display:flex;align-items:center;gap:10px;margin:12px 0;flex-wrap:wrap;}
+    .gridwrap{overflow-x:auto;}
+    .tipigrid{display:grid;grid-template-columns:minmax(250px,1fr) repeat(5,136px);align-items:center;min-width:940px;}
+    .dirgrid{display:grid;grid-template-columns:minmax(230px,1fr) repeat(3,130px);align-items:center;min-width:660px;}
+    .tipigrid .hd,.dirgrid .hd{font-size:var(--fs-body);color:var(--ink-muted);text-align:center;line-height:1.3;padding:0 4px 10px;align-self:end;}
+    .tipigrid .itm,.dirgrid .itm{font-size:var(--fs-body);padding:12px 12px 12px 0;}
+    .tipigrid .cell,.dirgrid .cell{display:flex;justify-content:center;padding:7px 3px;}
+    .tipigrid .cell button,.dirgrid .cell button{background:#efefef;color:#444;padding:9px 0;width:100%;font-size:var(--fs-minor);}
+    .tipigrid .cell button.sel{background:#159e79;color:#fff;}
+    .vasgrid{display:grid;grid-template-columns:minmax(240px,1fr) minmax(340px,1.6fr);align-items:center;min-width:760px;}
+    .vasgrid .itm{font-size:var(--fs-body);padding:14px 12px 14px 0;}
+    .vasgrid .cell{padding:12px 6px 4px;}
+    .vasgrid input[type=range]{width:100%;accent-color:#37474f;cursor:pointer;}
+    .vasgrid input[type=range]:not(.touched){accent-color:#bbb;}
+    .vasends{display:flex;justify-content:space-between;gap:8px;font-size:var(--fs-body);color:var(--ink-muted);line-height:1.3;}
+    .vasends span:nth-child(2){text-align:center;}
+    .vasends span:last-child{text-align:right;}
+    .dirgrid .cell button.sel{background:#7a4fb5;color:#fff;}
+    .rowtop{border-top:1px solid #eee;}
+    .reconitem{font-size:var(--fs-body);font-weight:600;color:#222;margin:0 0 6px;line-height:1.4;}
+    /* agreeing vs disagreeing sets are visually distinct so the switch is unmissable */
+    /* Direction no longer carries colour at all: it is in the heading of every item
+       ("How strongly do you agree?") and in the group intro, and giving it a hue meant
+       orange had to mean both "area" and "disagree". These classes are kept only so
+       the existing className assignments stay valid. */
+    .phase.agreeing,.phase.disagreeing{background:#fff;}
+    .stage-tag.agreeing,.stage-tag.disagreeing{background:none;}
+    svg,svg *{user-select:none;-webkit-user-select:none;}
+    .sound-status{font-size:var(--fs-body);font-weight:600;margin:6px 0;padding:6px 12px;border-radius:4px;display:inline-block;background:#f0f1f3;color:var(--ink-muted);letter-spacing:0;}
+    .sound-status.mine{background:#ede5fa;color:#6a3fb5;}
+    .sound-status.ref{background:#fdebd2;color:#c07010;}
+    .warn{background:#fff4e5;border-left:4px solid #e0902f;padding:12px 15px;border-radius:4px;font-size:var(--fs-body);line-height:1.55;margin:14px 0;max-width:900px;}
+    .checkbox-row{margin:10px 0;font-size:var(--fs-body);}
+    input[type=number]{font-size:18px;padding:8px 10px;width:150px;border:1px solid #bbb;border-radius:4px;}
+    svg{border:1px solid #ddd;background:#fff;display:block;margin:8px 0;border-radius:4px;touch-action:none;width:100%;}
+    /* area canvases are near-square and sized by viewport HEIGHT, so the square fills the
+       box instead of floating in a wide strip, and the page never needs scrolling */
+    /* Taller: the square was using under half the available height, which crowds
+       the small end and makes fine adjustment harder. NOTE this changes apparent
+       size and precision only -- the RECORDED range is set by the viewBox and
+       AREA_MAXS, so widening the area stimulus range is still a separate change. */
+    svg.areacanvas{width:auto;height:min(68vh,640px);max-width:100%;margin:8px auto;}
+    svg.draw{cursor:crosshair;}
+    /* SVG text is in VIEWBOX units, so a fixed size here renders at whatever the
+       canvas happens to be scaled to -- 14 units was about 8px in a 950px column and
+       less on a narrow window. sizeLabels() overrides this at render time by
+       measuring the canvas; these values are only the pre-measurement fallback. */
+    .svglabel{font-size:30px;fill:var(--ink-muted);}
+    svg.areacanvas .svglabel{font-size:22px;}
+    .data-output{background:#f2f2f4;padding:15px;border-radius:4px;margin-top:15px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;max-height:320px;overflow:auto;}
+    table.fit{border-collapse:collapse;margin:12px 0;font-size:var(--fs-cfg);width:100%;max-width:1150px;}
+    table.fit th,table.fit td{border:1px solid #ddd;padding:7px 9px;text-align:left;}table.fit th{background:#eee;}
+    .verdict{padding:12px 15px;border-radius:4px;font-size:var(--fs-body);line-height:1.5;margin:12px 0;font-weight:600;max-width:1150px;}
+    .verdict.good{background:#e8f5e9;border-left:4px solid #2d7a3a;color:#1f5c2a;}
+    .verdict.warn{background:#fff4e5;border-left:4px solid #e0902f;color:#8a5a12;}
+    .bignum{font-size:38px;font-weight:700;}
+    .cfg{background:#eef0f4;border:1px dashed #888;border-radius:4px;padding:12px 15px;margin:14px 0;font-size:var(--fs-cfg);max-width:900px;}
+    .cfg .hint,.cfg label{font-size:var(--fs-cfg);}
+    .cfg .tag{display:inline-block;background:#888;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;margin-bottom:8px;letter-spacing:.04em;}
+    #cardBox{background:#2f6fd0;height:54px;border-radius:6px;}
+</style>
+</head>
+<body class="noprogress">
+<div class="container">
+    <div id="pageHeader">
+    <h1>BFI-2-XS &mdash; Magnitude Scaling</h1>
+    <p class="instruction">You will first practice making proportional judgments, then respond to a statement about yourself.</p>
+    </div>
+
+    <!-- SETUP -->
+    <div id="setupPhase" class="phase neutral">
+        <span class="stage-tag neutral">SETUP</span>
+        <div id="pidRow" style="margin-bottom:18px;">
+            <label for="pidInput" class="hint" style="display:block;margin-bottom:4px;">Participant ID</label>
+            <input type="text" id="pidInput" style="font-size:var(--fs-body);padding:8px 10px;width:260px;border:1px solid #bbb;border-radius:4px;" placeholder="e.g. 10423">
+            <span class="hint" id="pidNote" style="margin-left:10px;"></span>
+        </div>
+        <h2>1. Screen size</h2>
+        <p class="instruction">Size the bar to match a credit card held against the screen.</p>
+        <div id="cardBox" style="width:320px;"></div>
+        <div class="controls-row">
+            <button id="cardMinus" class="adjust">&minus;</button><button id="cardPlus" class="adjust">+</button>
+            <span class="hint" id="cardRead"></span>
+        </div>
+        <div id="audioSetup">
+        <h2 style="margin-top:22px;">2. Headphones &amp; comfort ceiling</h2>
+        <div class="warn"><strong>Headphones required.</strong> Hold <strong>Louder</strong> until the sound is <em>loud but still comfortable</em>. This becomes the maximum loudness used anywhere in the task, so don't set it timidly.</div>
+        <div class="checkbox-row"><label><input type="checkbox" id="headphoneCheck"> I am wearing headphones.</label></div>
+        <div class="controls-row">
+            <button id="setupPlayBtn" class="play" disabled>&#9654; Play sound</button>
+            <button id="setupLouder" class="adjust" disabled>+</button>
+            <button id="setupSofter" class="adjust" disabled>&minus;</button>
+        </div>
+        <div class="hint" id="setupGateHint" style="color:#c0392b;font-weight:600;"></div>
+        </div><!-- /audioSetup -->
+        <div class="cfg">
+            <span class="tag">RESEARCHER SETTINGS</span><br>
+            <label><input type="checkbox" id="cfgShowRef"> Show anchor during line/number/area calibration trials</label>
+            <div class="hint" style="margin-top:4px;">Unchecked = faithful to Lodge 1981 (no looking back).</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgAudio"> Include the <em>loudness</em> blocks (E, F) and the audio setup</label>
+            <div class="hint" style="margin-top:4px;">Off by default. Line, number and area are the working modalities; loudness needs acoustic calibration before its numbers mean anything.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgShuffleMod" checked> Randomise the order of response modalities in the inventory</label>
+            <div class="hint" style="margin-top:4px;">Without this, number is always second and "the second modality degrades" cannot be told apart from "number degrades".</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgFixedOpRef" checked> Inventory: use a <em>given</em> reference instead of asking respondents to make one</label>
+            <div class="hint" style="margin-top:4px;">The neutral middle is supplied (line of fixed length, the number 50, a fixed square). Removes the reference step entirely &mdash; halves the inventory &mdash; and removes the clipping and confusion that respondent-set references caused. Deviates from Lodge 1981 direct scaling, where opinion references were respondent-produced; logged as such.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgDwell" checked> Hold reference screens for 3 seconds before Continue becomes available</label>
+            <div class="hint" style="margin-top:4px;">Applies to the reference step of each inventory item and to the anchor trial of each calibration block &mdash; the moments a respondent has to actually attend to the standard. It does not guarantee attention, but it stops the anchor being clicked past in half a second.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgPerItemRef"> BFI-2-XS: draw a fresh reference for <em>every</em> item, kept visible beside the response</label>
+            <div class="hint" style="margin-top:4px;">Lodge's interview schedule printed the item, then "Reference Line", then "Response Line" on the same page — a new reference per question, always in view. Unchecking gives one shared reference per modality (our earlier design), which relies on memory.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgHalves"> Re-show the reference halfway through the 18-trial blocks</label>
+            <div class="hint" style="margin-top:4px;">Lodge showed nine stimuli once each, so the reference was never more than nine pages back. Doubling to 18 stretches memory further than his design ever did; this splits A and B into two halves of nine with the reference redisplayed between them.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgOpArea" checked> Also collect <em>area</em> responses in the BFI-2-XS task</label>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgOpLoud"> Also collect <em>loudness</em> responses in the BFI-2-XS task</label>
+            <div class="hint" style="margin-top:4px;">Off by default: Lodge &amp; Tursky's survey used line production + numeric estimation only. Each extra modality adds 10 productions.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgVAS" checked> Also collect a continuous <em>sliding scale</em> (VAS) rating</label>
+            <div class="hint" style="margin-top:4px;">On by default. The VAS asks the same question with the same anchors as the 1&ndash;5 scale but without fixed steps, so the pair separates <em>discretization</em> from <em>compression</em>. It is also the only format whose range can represent an uncompressed respondent: departure from the midpoint spans ~50:1, against 2:1 for the 1&ndash;5 scale. Order of the two rating pages is randomised per session and recorded.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgLikertFirst"> Administer the category scales <em>before</em> the magnitude task</label>
+            <div class="hint" style="margin-top:4px;">Default is magnitude first. Rating on a category scale first gives respondents a category to translate, which contaminates the magnitude responses; this toggle exists so the order can be counterbalanced across participants.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgCenter" checked> Centre lines and squares on the screen</label>
+            <div class="hint" style="margin-top:4px;">Off = left-anchored (a shared origin, like drawing from a page margin). On = shapes grow symmetrically about the screen centre, removing the endpoint-position cue. Lodge does not specify placement.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgDouble"> Present every line/number stimulus twice in blocks A and B</label>
+            <div class="hint" style="margin-top:4px;">Lodge 1981 presented each of the nine stimuli once (he notes stimuli would "more reasonably" be shown twice each). Doubling gives real test–retest estimates for the two primary blocks at a cost of ~3 minutes.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgReconcile" checked> Ask about direction/category discrepancies at the end</label>
+            <div class="hint" style="margin-top:4px;">On by default. Direction and the category scale are collected in separate phases, and 3&ndash;5 items per respondent have contradicted across the pilots; handling them more than doubled Pearson agreement. Unchecking only removes the <em>question</em> &mdash; the contradictions are still detected and exported, with <code>resolved: null</code>, so the data is never quietly zeroed.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgProgress"> Show block and item progress above each screen</label>
+            <div class="hint" style="margin-top:4px;">Off by default. "Block 1 of 6", "Line 4 of 10" and the modality name are useful while piloting, but a participant needs none of them to answer, and they sit above the thing they are supposed to be looking at.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgSkip"> Researcher fast-forward: show a Skip button that auto-answers the current step</label>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgFixedMod" checked> Assigned modulus: the reference is given the value 50 (Lodge default)</label>
+            <div class="hint" style="margin-top:4px;">Checked = Lodge 1976/1981 default: the standard is assigned 50 and respondents judge in proportion to it (loudness reference is still set at a "comfortable" level, as in 1976 — a loudness cannot be assigned by number). Unchecked = free modulus (the 1981 footnote-6 variant): respondents pick their own reference values, which reduces regression bias but risks awkward anchors. Either way this applies to <strong>calibration only</strong> — in the opinion task the references are always produced by the respondent, as in 1981 direct scaling.</div>
+            <label style="display:block;margin-top:8px;"><input type="checkbox" id="cfgPink"> Use pink noise instead of white</label>
+            <div class="hint" style="margin-top:4px;">White broadband is closest to Lodge et al. 1976 ("broad band noise", TDH-39 earphones). Pink is gentler but weights energy toward low frequencies.</div>
+            <div class="hint" style="margin-top:8px;"><strong>~50&ndash;66 calibration trials, roughly 17&ndash;26 minutes</strong> depending on the doubling toggle. Lodge's two-modality calibration took 6&ndash;8 minutes. Expected exponents, for the researcher only (never shown to participants): line/number 1.0, area &asymp;0.7, loudness &asymp;0.67.</div>
+        </div>
+        <button id="setCeilingBtn" class="btn-loud" disabled>Begin calibration</button>
+    </div>
+
+    <div id="calibIntro" class="phase neutral hidden">
+        <span class="stage-tag neutral">CALIBRATION</span>
+        <h2>Practice making proportional judgments</h2>
+        <p class="instruction" id="calibIntroP1">Six short blocks. In each, the <strong>first item is your reference</strong> &mdash; give it any value that seems appropriate. Then respond in proportion to it.</p>
+        <p class="instruction" id="calibIntroP2">Twice the reference &rarr; twice the value; ten times &rarr; ten times; half &rarr; half. No limit on the range you may use. Any value except zero.</p>
+        <p class="instruction" id="calibIntroP3"><strong>Judge by eye, not by measuring.</strong> We want to know how big things <em>look</em> to you. Please do not measure the screen with your fingers, count anything, or work sizes out in your head. We are interested in your perceptions. </p>
+        <p class="instruction" id="noLookBack"></p>
+        <button id="calibStart" class="btn-line">Begin</button>
+    </div>
+
+    <!-- RANGE PREVIEW (Lodge 1976: "an initial viewing period in which S was shown the full range") -->
+    <div id="previewPhase" class="phase neutral hidden">
+        <span class="stage-tag neutral">BEFORE THIS BLOCK</span>
+        <h2 id="prevHead"></h2>
+        <p class="instruction" id="prevInstr"></p>
+        <div id="prevContent"></div>
+        <button id="prevNext" class="btn-op">Begin this block</button>
+    </div>
+
+    <!-- A: number for a line -->
+    <div id="blockA" class="phase line hidden">
+        <p class="status"><span class="stage-tag line">1 / 6 &mdash; a number for each line</span><span class="progress" id="aProg"></span></p>
+        <h2 id="aHead">How long is this line?</h2>
+        <svg id="aSvg" height="120" viewBox="0 0 1700 120" preserveAspectRatio="xMidYMid meet">
+            <line id="aAnchor" x1="40" y1="34" x2="40" y2="34" stroke="#2f6fd0" stroke-width="5" stroke-linecap="round" visibility="hidden"/>
+            <text id="aAnchorLbl" x="850" y="24" text-anchor="middle" class="svglabel" visibility="hidden"></text>
+            <line id="aStim" x1="40" y1="80" x2="40" y2="80" stroke="#2f6fd0" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+        <p class="instruction" id="aInstr"></p>
+        <div class="controls-row"><input type="number" id="aInput" min="0" step="any" placeholder="a number">
+            <button id="aNext" class="btn-line" disabled>Next</button></div>
+    </div>
+
+    <!-- B: line for a number -->
+    <div id="blockB" class="phase line hidden">
+        <p class="status"><span class="stage-tag line">2 / 6 &mdash; a line for each number</span><span class="progress" id="bProg"></span></p>
+        <h2>Draw a line for: <span class="bignum" id="bTarget" style="color:#2f6fd0;">&mdash;</span></h2>
+        <svg id="bSvg" class="draw" height="130" viewBox="0 0 1700 130" preserveAspectRatio="xMidYMid meet">
+            <line id="bAnchor" x1="40" y1="36" x2="40" y2="36" stroke="#2f6fd0" stroke-width="5" stroke-linecap="round" visibility="hidden"/>
+            <text id="bAnchorLbl" x="850" y="26" text-anchor="middle" class="svglabel" visibility="hidden"></text>
+            <line id="bResp" x1="40" y1="88" x2="40" y2="88" stroke="#2f6fd0" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+        <p class="instruction" id="bInstr"></p>
+        <div class="hint" id="bDragHint">Drag left or right from the centre — the line grows evenly on both sides.</div>
+        <div class="warn" id="bCapWarn" style="display:none;">This line has hit the edge of the drawing area, so it may be shorter than you intended. This trial will be flagged and left out of the fit.</div>
+        <div class="warn" id="bRefWarn" style="display:none;">That reference is quite long. Later numbers go up to <strong>6&times;</strong> your reference and your lines will need room to grow — consider something shorter.</div>
+        <button id="bConfirm" class="btn-line" disabled>Confirm</button>
+    </div>
+
+    <!-- C: number for an area -->
+    <div id="blockC" class="phase area hidden">
+        <p class="status"><span class="stage-tag area">3 / 6 &mdash; a number for each square</span><span class="progress" id="cProg"></span></p>
+        <h2 id="cHead">How much space does this square cover?</h2>
+        <svg id="cSvg" class="areacanvas" viewBox="0 0 880 820" preserveAspectRatio="xMidYMid meet"><line class="hax" x1="40" y1="810" x2="840" y2="810" stroke="#d8d8d8" stroke-width="2"/><line class="vax" x1="40" y1="810" x2="40" y2="14" stroke="#d8d8d8" stroke-width="2"/>
+            <rect id="cAnchor" x="40" y="520" width="0" height="0" fill="none" stroke="#d2691e" stroke-width="4" visibility="hidden"/>
+            <rect id="cStim" x="40" y="520" width="0" height="0" fill="#d2691e" opacity="0.85"/>
+        </svg>
+        <p class="instruction" id="cInstr"></p>
+        <div class="controls-row"><input type="number" id="cInput" min="0" step="any" placeholder="a number">
+            <button id="cNext" class="btn-area" disabled>Next</button></div>
+    </div>
+
+    <!-- D: area for a number -->
+    <div id="blockD" class="phase area hidden">
+        <p class="status"><span class="stage-tag area">4 / 6 &mdash; a square for each number</span><span class="progress" id="dProg"></span></p>
+        <h2>Make a square for: <span class="bignum" id="dTarget" style="color:#d2691e;">&mdash;</span></h2>
+        <svg id="dSvg" class="draw areacanvas" viewBox="0 0 880 820" preserveAspectRatio="xMidYMid meet"><line class="hax" x1="40" y1="810" x2="840" y2="810" stroke="#d8d8d8" stroke-width="2"/><line class="vax" x1="40" y1="810" x2="40" y2="14" stroke="#d8d8d8" stroke-width="2"/>
+            <rect id="dAnchor" x="40" y="520" width="0" height="0" fill="none" stroke="#d2691e" stroke-width="4" stroke-dasharray="0" visibility="hidden"/>
+            <rect id="dResp" x="40" y="520" width="0" height="0" fill="#d2691e" opacity="0.85"/>
+        </svg>
+        <p class="instruction" id="dInstr"></p>
+        <div class="hint" id="dDragHint">Drag diagonally to grow the square.</div>
+        <div class="warn" id="dRefWarn" style="display:none;">That reference square is quite big. Later numbers go up to <strong>6&times;</strong> its area, and your squares will not fit on the screen — please make it smaller.</div>
+        <div class="warn" id="dCapWarn" style="display:none;">This square has hit the edge of the drawing area, so it may be smaller than you intended. This trial will be flagged.</div>
+        <button id="dConfirm" class="btn-area" disabled>Confirm</button>
+    </div>
+
+    <!-- E: loudness for a line -->
+    <div id="blockE" class="phase loud hidden">
+        <p class="status"><span class="stage-tag loud">5 / 6 &mdash; a loudness for each line</span><span class="progress" id="eProg"></span></p>
+        <h2 id="eHead">Set a loudness to match this line</h2>
+        <p class="instruction" id="eInstr"></p>
+        <svg id="eSvg" height="110" viewBox="0 0 1700 110" preserveAspectRatio="xMidYMid meet">
+            <line id="eAnchor" x1="40" y1="32" x2="40" y2="32" stroke="#d8c8e8" stroke-width="5" stroke-linecap="round" visibility="hidden"/>
+            <text id="eAnchorLbl" x="850" y="24" text-anchor="middle" class="svglabel" visibility="hidden">your reference line</text>
+            <line id="eStim" x1="40" y1="76" x2="40" y2="76" stroke="#6a3fb5" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+        <div class="controls-row">
+            <button id="ePlay" class="play">&#9654; Play my sound</button>
+            <button id="eAB" class="ab" style="display:none;">&#8646; Switch to reference</button>
+            <button id="eLouder" class="adjust">+</button><button id="eSofter" class="adjust">&minus;</button>
+            <button id="eConfirm" class="btn-loud">Confirm</button>
+        </div>
+        <div><span class="sound-status" id="eStatus">Silent</span></div>
+        <div class="warn" id="eRefWarn" style="display:none;">Your reference sound is close to the maximum — leave room to go much louder on later trials.</div>
+        <div class="warn" id="eCapWarn" style="display:none;">Maximum loudness reached — this response will be recorded as at the ceiling (censored). If you need to go louder, your reference sound may be set too loud.</div>
+        <div class="hint">Each trial opens playing your reference. Press the orange button — or any Louder/Softer button — to move to your own sound. Trials start alternately from a low or a high level, so sometimes you will turn the sound down to your answer.</div>
+    </div>
+
+    <!-- F: loudness for a number -->
+    <div id="blockF" class="phase loud hidden">
+        <p class="status"><span class="stage-tag loud">6 / 6 &mdash; a loudness for each number</span><span class="progress" id="fProg"></span></p>
+        <h2>Set a loudness for: <span class="bignum" id="fTarget" style="color:#6a3fb5;">&mdash;</span></h2>
+        <p class="instruction" id="fInstr"></p>
+        <div class="controls-row">
+            <button id="fPlay" class="play">&#9654; Play my sound</button>
+            <button id="fAB" class="ab" style="display:none;">&#8646; Switch to reference</button>
+            <button id="fLouder" class="adjust">+</button><button id="fSofter" class="adjust">&minus;</button>
+            <button id="fConfirm" class="btn-loud">Confirm</button>
+        </div>
+        <div><span class="sound-status" id="fStatus">Silent</span></div>
+        <div class="warn" id="fRefWarn" style="display:none;">Your reference sound is close to the maximum — leave room to go much louder on later trials.</div>
+        <div class="warn" id="fCapWarn" style="display:none;">Maximum loudness reached — this response will be recorded as at the ceiling (censored). If you need to go louder, your reference sound may be set too loud.</div>
+    </div>
+
+    <!-- CALIB DONE -->
+    <div id="calibDone" class="phase neutral hidden">
+        <span class="stage-tag neutral">CALIBRATION COMPLETE</span>
+        <h2>Criterion test</h2>
+        <div id="calibVerdict"></div>
+        <table class="fit" id="calibTable"></table>
+        <p class="instruction" id="calibNote"></p>
+        <button id="toOpinion" class="btn-op">Continue to the statement</button>
+    </div>
+
+    <!-- OPINION -->
+    <div id="tipiPhase" class="phase neutral hidden">
+        <span class="stage-tag op">CATEGORY RATING</span>
+        <h2>How much do these describe you?</h2>
+        <p class="instruction">Here are a number of characteristics that may or may not apply to you. For example, do you agree that you are someone who likes to spend time with others? Indicate the extent to which you agree or disagree with each statement. <br><strong>I am someone who&hellip;</strong></p>
+        <div class="gridwrap"><div id="tipiRows" class="tipigrid"></div></div>
+        <button id="tipiNext" class="btn-op" disabled style="margin-top:16px;">Continue</button>
+        <div class="hint" id="tipiHint"></div>
+    </div>
+
+    <div id="vasPhase" class="phase neutral hidden">
+        <span class="stage-tag op">SLIDING SCALE</span>
+        <h2>How much do these describe you?</h2>
+        <p class="instruction">The same statements, but this time the marker can go <strong>anywhere</strong> along the line &mdash; there are no fixed steps. Put each one exactly where it feels right, using as much or as little of the line as you need. <br><strong>I am someone who&hellip;</strong></p>
+        <div class="gridwrap"><div id="vasRows" class="vasgrid"></div></div>
+        <button id="vasNext" class="btn-op" disabled style="margin-top:16px;">Continue</button>
+        <div class="hint" id="vasHint"></div>
+    </div>
+
+    <div id="groupIntro" class="phase neutral hidden">
+        <span class="stage-tag op" id="groupTag">NEXT SET</span>
+        <h2 id="groupH2"></h2>
+        <p class="instruction" id="groupInstr"></p>
+        <button id="groupNext" class="btn-op">Continue</button>
+    </div>
+
+    <div id="reconcilePhase" class="phase neutral hidden">
+        <span class="stage-tag op">ONE LAST CHECK</span>
+        <h2>A couple of answers don't line up</h2>
+        <p class="instruction">Earlier you said whether you agree or disagree with each statement. Later you rated the same statements from 1 to 5. On the statements below the two answers point in opposite directions. Please tell us which one you meant.</p>
+        <div id="reconRows"></div>
+        <button id="reconNext" class="btn-op" disabled style="margin-top:16px;">Finish</button>
+        <div class="hint" id="reconHint"></div>
+    </div>
+
+    <div id="remindPhase" class="phase neutral hidden">
+        <span class="stage-tag neutral">Your reference</span>
+        <h2 id="remindH2">A reminder of your reference</h2>
+        <p class="instruction" id="remindInstr"></p>
+        <svg id="remindSvg" height="90" viewBox="0 0 1700 90" preserveAspectRatio="xMidYMid meet">
+            <line id="remindLine" x1="40" y1="45" x2="40" y2="45" stroke="#2f6fd0" stroke-width="6" stroke-linecap="round"/>
+        </svg>
+        <div id="remindNum" class="bignum" style="color:#6a3fb5;"></div>
+        <button id="remindNext" class="btn-op">Continue</button>
+    </div>
+
+    <div id="opDirection" class="phase neutral hidden">
+        <span class="stage-tag op">AGREE OR DISAGREE</span>
+        <h2>First, the direction only</h2>
+        <p class="instruction">Here are a number of characteristics that may or may not apply to you. For example, do you agree that you are someone who likes to spend time with others? Indicate the extent to which you agree or disagree with each statement.</p>
+        <p class="instruction">This first page asks only <em>whether</em> you agree or disagree &mdash; not how strongly. You will express the strength on the pages that follow, so answer these quickly.<br><strong>I am someone who&hellip;</strong></p>
+        <div class="gridwrap"><div id="dirRows" class="dirgrid"></div></div>
+        <button id="dirNext" class="btn-op" disabled style="margin-top:16px;">Continue</button>
+        <div class="hint" id="dirHint"></div>
+    </div>
+
+    <div id="opModality" class="phase op hidden">
+        <p class="status"><span class="progress" id="opProg"></span></p>
+        <div class="statement" id="opModStatement">&mdash;</div>
+        <div class="hint" id="opDirRemind" style="margin-bottom:10px;"></div>
+        <div id="opLinePane" style="display:none;">
+            <h3 id="opLineH3"></h3><p class="instruction" id="opLineInstr"></p>
+            <svg id="opLineSvg" class="draw" height="150" viewBox="0 0 1700 150" preserveAspectRatio="xMidYMid meet">
+                <text id="opLineRefLbl" x="850" y="24" text-anchor="middle" class="svglabel" visibility="hidden">Reference: neutral</text>
+                <line id="opLineRef" x1="40" y1="44" x2="40" y2="44" stroke="#2f6fd0" stroke-width="5" stroke-linecap="round" visibility="hidden"/>
+                <text id="opLineRespLbl" x="850" y="82" text-anchor="middle" class="svglabel" visibility="hidden">Your response</text>
+                <line id="opLineResp" x1="40" y1="104" x2="40" y2="104" stroke="#2f6fd0" stroke-width="5" stroke-linecap="round"/>
+            </svg>
+            <div class="warn" id="opLineCapWarn" style="display:none;">This line has hit the edge of the drawing area, so it may be shorter than you intended. If your answer really is this large, that is fine &mdash; but if you were reaching for more room, there is none left.</div>
+            <div class="warn" id="opLineRefWarn" style="display:none;">Keep your reference line small — your response can be many times larger and needs room on the screen.</div>
+            <button id="opLineConfirm" class="btn-op" disabled>Confirm</button>
+        </div>
+        <div id="opAreaPane" style="display:none;">
+            <h3 id="opAreaH3"></h3><p class="instruction" id="opAreaInstr"></p>
+            <svg id="opAreaSvg" class="draw areacanvas" viewBox="0 0 880 820" preserveAspectRatio="xMidYMid meet"><line class="hax" x1="40" y1="810" x2="840" y2="810" stroke="#d8d8d8" stroke-width="2"/><line class="vax" x1="40" y1="810" x2="40" y2="14" stroke="#d8d8d8" stroke-width="2"/>
+                <rect id="opAreaRef" x="40" y="520" width="0" height="0" fill="none" stroke="#d2691e" stroke-width="4" visibility="hidden"/>
+                <text id="opAreaRefLbl" x="40" y="805" class="svglabel" visibility="hidden">reference</text>
+                <rect id="opAreaResp" x="40" y="520" width="0" height="0" fill="#d2691e" opacity="0.75"/>
+            </svg>
+            <div class="warn" id="opAreaRefWarn" style="display:none;">Keep your reference square small — your response can cover many times its area and needs room on the screen.</div>
+            <div class="warn" id="opAreaCapWarn" style="display:none;">This square has hit the edge of the drawing area, so it may be smaller than you intended. This response will be flagged.</div>
+            <button id="opAreaConfirm" class="btn-op" disabled>Confirm</button>
+        </div>
+        <div id="opNumPane" style="display:none;">
+            <h3 id="opNumH3"></h3><p class="instruction" id="opNumInstr"></p>
+            <div class="warn" id="opNumBelowWarn" style="display:none;"></div>
+            <div class="controls-row" id="opNumRefRow">
+                <span class="hint" style="min-width:250px;">Reference &mdash; neutral:</span>
+                <input type="number" id="opNumRefShow" disabled style="max-width:110px;">
+            </div>
+            <div class="controls-row"><span class="hint" id="opNumRespLbl" style="min-width:250px;"></span>
+                <input type="number" id="opNumInput" min="0" step="any" placeholder="a number">
+                <button id="opNumConfirm" class="btn-op" disabled>Confirm</button></div>
+        </div>
+        <div id="opLoudPane" style="display:none;">
+            <h3 id="opLoudH3"></h3><p class="instruction" id="opLoudInstr"></p>
+            <div class="controls-row">
+                <button id="opLoudPlay" class="play">&#9654; Play my sound</button>
+                <button id="opLoudAB" class="ab" style="display:none;">&#8646; Switch to my reference</button>
+                <button id="opLoudLouder" class="adjust">+</button><button id="opLoudSofter" class="adjust">&minus;</button>
+                <button id="opLoudConfirm" class="btn-op">Confirm</button>
+            </div>
+            <div><span class="sound-status" id="opLoudStatus">Silent</span></div>
+            <div class="warn" id="opRefLoudWarn" style="display:none;">Your reference sound is close to the maximum — leave room to go louder for your response.</div>
+        <div class="warn" id="opCapWarn" style="display:none;">Maximum loudness reached — your answer will be recorded as at the ceiling. Your true response may be stronger than what can be recorded.</div>
+        </div>
+    </div>
+
+    <div id="savingPhase" class="phase neutral hidden">
+        <h2 id="saveHead">Saving your responses&hellip;</h2>
+        <p class="instruction" id="saveMsg">Please keep this window open. It will only take a moment.</p>
+        <div id="saveFail" style="display:none;">
+            <button id="saveRetry">Try again</button>
+            <button id="saveDownload" class="secondary">Download my responses</button>
+        </div>
+    </div>
+
+    <div id="resultsPhase" class="phase neutral hidden">
+        <span class="stage-tag neutral">RESULT</span>
+        <h2>ITEMS scores: magnitude vs category</h2>
+        <div id="scoreLine" class="instruction"></div>
+        <table class="fit" id="resDimTable"></table>
+        <h3 style="margin-top:22px;">Item detail</h3>
+        <table class="fit" id="resTable"></table>
+        <h3 style="margin-top:22px;">Category scale vs magnitude scale</h3>
+        <p class="instruction" id="resNote"></p>
+        <div class="controls-row">
+            <button id="dlJson" class="btn-op">&#8681; Download JSON</button>
+            <button id="dlCsv" class="btn-op">&#8681; Download CSV</button>
+            <button class="secondary" onclick="location.reload()">Start over</button>
+        </div>
+        <div id="resultsData" class="data-output"></div>
+    </div>
+</div>
+
+<button id="skipBtn" style="display:none;position:fixed;bottom:18px;right:18px;z-index:999;background:#333;box-shadow:0 2px 8px rgba(0,0,0,.3);">Skip &#9193;</button>
+<script>
+// ================= CONFIG =================
+const TRAIT='BFI-2-XS (Soto & John 2017)';
+// BFI-2-XS (Soto & John 2017, J. Research in Personality 68, 69-81; items 1-15 of the
+// BFI-2-S administration form). Domain key = first three items per domain of the BFI-2-S
+// key: E 1R,6,11 | A 2,7R,12 | C 3R,8R,13 | N 4,9,14R | O 5,10R,15.
+// BFI-2 items copyright 2015 Oliver P. John & Christopher J. Soto. Free for research use;
+// see the Colby Personality Lab site for current terms and translations.
+const ITEMS=[
+ {n:1, text:'Tends to be quiet.',                        dim:'Extraversion',         rev:true },
+ {n:2, text:'Is compassionate, has a soft heart.',       dim:'Agreeableness',        rev:false},
+ {n:3, text:'Tends to be disorganized.',                 dim:'Conscientiousness',    rev:true },
+ {n:4, text:'Worries a lot.',                            dim:'Negative Emotionality',rev:false},
+ {n:5, text:'Is fascinated by art, music, or literature.',dim:'Open-Mindedness',     rev:false},
+ {n:6, text:'Is dominant, acts as a leader.',            dim:'Extraversion',         rev:false},
+ {n:7, text:'Is sometimes rude to others.',              dim:'Agreeableness',        rev:true },
+ {n:8, text:'Has difficulty getting started on tasks.',  dim:'Conscientiousness',    rev:true },
+ {n:9, text:'Tends to feel depressed, blue.',            dim:'Negative Emotionality',rev:false},
+ {n:10,text:'Has little interest in abstract ideas.',    dim:'Open-Mindedness',      rev:true },
+ {n:11,text:'Is full of energy.',                        dim:'Extraversion',         rev:false},
+ {n:12,text:'Assumes the best about people.',            dim:'Agreeableness',        rev:false},
+ {n:13,text:'Is reliable, can always be counted on.',    dim:'Conscientiousness',    rev:false},
+ {n:14,text:'Is emotionally stable, not easily upset.',  dim:'Negative Emotionality',rev:true },
+ {n:15,text:'Is original, comes up with new ideas.',     dim:'Open-Mindedness',      rev:false}];
+const NITEMS=ITEMS.length;
+const DIMS=['Extraversion','Agreeableness','Conscientiousness','Negative Emotionality','Open-Mindedness'];
+const LIK_MIN=1,LIK_MAX=5,LIK_MID=3;   // BFI-2 uses a 5-point scale with a labelled neutral midpoint
+const LIKERT_LBL=['Disagree strongly','Disagree a little','Neutral; no opinion','Agree a little','Agree strongly'];
+// Continuous bipolar VAS. Same question and same end anchors as the category
+// scale, so VAS-vs-category isolates DISCRETIZATION with nothing else varying.
+// It also makes the compression test falsifiable for the first time: departure
+// from the midpoint spans ~50:1 here against the 5-point scale's 2:1, which is
+// finally wide enough to represent the ~10-25:1 spread of the magnitude ratios.
+// On a 5-point scale an exponent of 1.0 is arithmetically unreachable.
+const VAS_MIN=0,VAS_MAX=100,VAS_MID=50;
+
+// ---- Apparent magnitude (Stevens & Guirao 1963) ----
+// What is being scaled is APPARENT extent, not physical extent. Pilot respondents
+// measured lines against their fingers, counted squares, and worked out sides and
+// multiplied -- every one of which replaces a perceptual judgment with an
+// arithmetic one. That is not a minor protocol slip: computed responses are linear
+// in PHYSICAL magnitude, which drives the recovered area exponent toward 1.0, and
+// 1.0 is exactly the landmark the area diagnostic reads as "no perceptual
+// compression at all -- arithmetic or category translation rather than a magnitude
+// judgment". So the instruction against measuring is load-bearing for the central
+// measurement, not politeness.
+const APPARENT_LINE='Judge how long the line <strong>looks</strong> to you. Please do not measure it, we are interested in your perceptions.';
+const APPARENT_AREA='Judge how much space the square <strong>looks</strong> like it covers. Do not count squares and do not work out the sides and multiply &mdash; just judge how big it looks.';
+const APPARENT_MAKE_LINE='Draw it so it <strong>looks</strong> right. Judge it by eye &mdash; do not measure or calculate.';
+const APPARENT_MAKE_AREA='Make it so the space it covers <strong>looks</strong> right. Judge the area by eye &mdash; do not work out the sides.';
+// Speed instruction. Deliberation is what gives the arithmetic strategies room to
+// operate, so this and the apparent-magnitude framing do the same job.
+const QUICK_INSTR='';
+// After the block intro and the reference trial the full paragraph becomes a
+// single line. It is still on screen at the moment someone might reach for a
+// finger to measure with -- which is the whole point, since a computed response
+// is linear in PHYSICAL magnitude and lands on the 1.00 area landmark -- but it
+// has stopped being the paragraph that gets skipped from trial three onwards.
+const SHORT_LINE='Judge how it <strong>looks</strong> &mdash; don\'t measure.';
+const SHORT_AREA='Judge the area by eye &mdash; don\'t count or calculate.';
+// Takes the button's own label, because it is not the same word on every reference
+// page: "Continue" under assigned modulus, "Confirm" under free modulus, and "Set
+// reference" in the inventory. A hard-coded "press Continue" would be wrong on two
+// of the three, and wrong instructions are what the harness exists to catch.
+const READY_CONTINUE=btn=>`When you are ready to proceed, press ${btn}.`;
+const VB=1700,MIN_X=40,MAX_X=1660,REF_LINE=200,REF_NUMBER=50;
+// A square is limited by the SHORT canvas dimension, so height was the binding constraint
+// while ~1200 units of width sat unused. Canvas raised 560 -> 800 to recover that range.
+// The area canvas is its own near-square viewBox. Sharing the 1700-wide line canvas meant
+// a square could never use more than 44% of the width, and forcing it taller caused scrolling.
+const AREA_VBW=880, AREA_VBH=820;
+const AREA_CX=AREA_VBW/2, AREA_CY=AREA_VBH/2;
+const AREA_Y=810, AREA_MAXS=800, REF_SIDE=140;
+// Headroom must be equated in SUBJECTIVE, not physical, units: perceived area grows as
+// A^0.7, so 20x physical area feels like only 20^0.7 = 8x, while a line's 20x feels like 20x.
+// To give area the same subjective range as the line we need 20^(1/0.7) = 66x physical.
+const AREA_EXP_NOMINAL=0.70;
+const areaHeadroomFor=subjective=>Math.pow(subjective,1/AREA_EXP_NOMINAL);
+const LINE_CX=(MIN_X+MAX_X)/2, MAX_HALF=(MAX_X-MIN_X)/2;   // lines centred; max length unchanged at 1620             // squares grow up from y=520
+const LODGE_NUMS=[3,6,20,35,50,100,150,225,300];
+const LODGE_RATIOS=LODGE_NUMS.map(n=>n/REF_NUMBER);      // 100:1
+const AREA_RATIOS=[0.12,0.4,0.7,1.00,2.0,3.0,6.0];       // area ratios (side = sqrt) -> 50:1
+const AREA_NUMS=[6,20,35,50,100,150,300];
+const LOUD_LINE_RATIOS=[0.25,0.40,0.71,1.00,2.00,4.00];   // pressure = line^1.5 -> 0.125x..8x = 64:1
+const LOUD_NUMS=[12,25,35,50,100,200];                     // -> pressure 0.12x..8x = ~68:1
+const HARD_CAP=0.30,STEP=1.03,TICK_MS=40,RAMP=0.02;
+let ceilingGain=0.12,setupGain=0.02,refCalGain=0.02;
+// These MUST match the `checked` attributes in the researcher panel: nothing reads
+// the DOM at load, so a mismatch means the instrument runs one configuration while
+// the panel displays another.
+let pxPerMm=null,showRef=false,usePink=false,fixedMod=true,centred=true,doubleAB=false,opArea=true,opLoud=false,likertFirst=false,useAudio=false,perItemRef=false,halves=false,useDwell=true,shuffleMod=true,fixedOpRef=true,useVAS=true,showProgress=false,useReconcile=true;
+
+// ================= HELPERS =================
+const $=id=>document.getElementById(id);
+const show=id=>{$(id).classList.remove('hidden');sizeLabels();},hide=id=>$(id).classList.add('hidden');
+
+// ---- participant identification ----
+// Several names are accepted because the link is built elsewhere: Qualtrics pipes
+// its own embedded field, SONA uses id, Prolific uses PROLIFIC_PID. Taking the
+// first one present means the link can be assembled without editing this file.
+const PID_KEYS=['pid','participant','participantId','id','PROLIFIC_PID','ResponseID','sona_id'];
+const urlParams=new URLSearchParams(location.search);
+let pidSource=null,pid='';
+for(const k of PID_KEYS){const v=urlParams.get(k);
+    if(v&&v.trim()){pid=v.trim();pidSource='url:'+k;break;}}
+// Where to send them afterwards. Read from the URL rather than hard-coded, so the
+// same file works for a pilot, a SONA run and a rerun with a different survey.
+const returnUrl=(urlParams.get('return')||urlParams.get('returnUrl')||'').trim()||null;
+
+// ---- where completed sessions are sent ----
+// Set DATA_ENDPOINT to the address of save.php once it is installed, or pass it per
+// session as ?post=<url>. Leave both empty and nothing is sent: the results screen
+// and its download buttons behave exactly as they always have.
+const DATA_ENDPOINT_DEFAULT='';
+const DATA_ENDPOINT=(urlParams.get('post')||urlParams.get('endpoint')||DATA_ENDPOINT_DEFAULT).trim();
+// A shared word that save.php also knows. It is in the page, so a determined person
+// can read it -- it stops stray traffic, it is not real authentication.
+const DATA_TOKEN=(urlParams.get('token')||'').trim();
+
+// Leaving the page is the one thing here that cannot be undone, so it lives in one
+// named place: easier to find, and it gives the tests something to stand in for.
+function goTo(u){location.replace(u);}
+
+// The instrument adds the participant id to the return URL itself, so whoever builds
+// the link does not have to nest one URL inside another. That nesting is a trap: a
+// return URL carrying its own &-separated parameters gets torn apart by the OUTER
+// query string, and the tail silently goes missing. Leaving pid to us means the
+// return URL can stay a plain link with nothing to escape.
+function withPid(u){
+    if(!u||!pid)return u;
+    try{const x=new URL(u,location.href);
+        if(!x.searchParams.has('pid'))x.searchParams.set('pid',pid);
+        return x.toString();}
+    catch(e){return u+(u.includes('?')?'&':'?')+'pid='+encodeURIComponent(pid);}}
+
+// Posted as text/plain, not application/json. A JSON content type makes the browser
+// send a CORS preflight first, and a Google Apps Script web app -- the receiver for
+// anyone without PHP hosting -- cannot answer one, so the real request is never sent.
+// Neither receiver reads the header: both take the raw body and parse it themselves.
+const CT={'Content-Type':'text/plain;charset=utf-8'};
+
+// Whether the save actually happened is in the BODY, not only in the status. Apps
+// Script cannot set a status code, so it returns 200 for a refusal too; trusting the
+// status there would report a rejected session as saved and redirect the participant
+// away from the only copy. A receiver that says nothing useful gets the benefit of
+// the doubt, which is what keeps this compatible with a plain 200.
+async function readAck(r){
+    try{const j=JSON.parse(await r.text());
+        return (j&&typeof j==='object')?j:{};}
+    catch(e){return{};}}
+
+// Three attempts with a growing pause: a flaky connection is the common failure and
+// it usually clears. A 4xx, or a refusal in the body, means the server understood and
+// refused, so retrying it would just waste the participant's time.
+async function sendSession(p){
+    if(!DATA_ENDPOINT)return{ok:false,reason:'no endpoint configured'};
+    const body=JSON.stringify({token:DATA_TOKEN,id:p.participant&&p.participant.id,session:p});
+    let last='';
+    for(let attempt=1;attempt<=3;attempt++){
+        try{
+            const r=await fetch(DATA_ENDPOINT,{method:'POST',headers:CT,body});
+            const said=await readAck(r);
+            if(r.ok&&said.ok!==false)return{ok:true,attempt};
+            last=said.ok===false
+                ?'the server refused it: '+(said.error||'it did not say why')
+                :'the server replied '+r.status;
+            // A refusal in the body and a 4xx mean the same thing: the server
+            // understood and said no. Neither fixes itself, so do not retry.
+            if(said.ok===false||(r.status>=400&&r.status<500))return{ok:false,reason:last};
+        }catch(e){last='could not reach the server';}
+        if(attempt<3)await new Promise(r=>setTimeout(r,attempt*1500));
+    }
+    return{ok:false,reason:last};}
+// Solve each canvas's label size for a CONSTANT rendered size. getBoundingClientRect
+// on a hidden pane returns zero width -- the mistake that once exported every line
+// length as 0 -- so this runs after show() and skips anything not yet laid out.
+const SVG_LABEL_PX=16;
+function sizeLabels(){
+    document.querySelectorAll('svg').forEach(svg=>{
+        const labels=svg.querySelectorAll('.svglabel');
+        if(!labels.length)return;
+        const r=svg.getBoundingClientRect();
+        const vb=svg.viewBox&&svg.viewBox.baseVal;
+        if(!r.width||!vb||!vb.width||!vb.height)return;   // hidden or not laid out
+        // preserveAspectRatio="meet" scales uniformly to fit BOTH axes, so the drawn
+        // content can be far shorter than the element holding it: the line canvas is
+        // 151px tall but shows only 31px of content in a narrow window. Capping
+        // against r.height therefore capped nothing and the two labels overlapped by
+        // 9px. The cap has to be against the CONTENT height, not the box.
+        const scale=Math.min(r.width/vb.width,r.height/vb.height);
+        const px=Math.min(SVG_LABEL_PX,vb.height*scale*0.22);
+        const units=(px/scale).toFixed(1);
+        // style, not setAttribute: font-size is a PRESENTATION attribute and the
+        // .svglabel rule in the stylesheet outranks it, so the attribute version
+        // computed back to 30px and the labels stayed at 9px.
+        labels.forEach(t=>{t.style.fontSize=units+'px';});});}
+window.addEventListener('resize',sizeLabels);
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function withRepeats(arr,anc,mode){const rest=arr.filter(v=>v!==anc);
+    const extra=mode==='double'?[...rest,anc]:shuffle(rest.slice()).slice(0,mode);
+    let seq,tries=0;   // reshuffle until nothing repeats back-to-back (incl. against the anchor)
+    do{seq=shuffle([...rest,...extra]);tries++;}
+    while(tries<400&&(seq[0]===anc||seq.some((v,i)=>i>0&&v===seq[i-1])));
+    return [anc,...seq];}
+// Map screen -> viewBox properly. The old version scaled BOTH axes by VB/r.width and
+// ignored preserveAspectRatio letterboxing, so vertical drag was off by hundreds of units
+// and the area square was effectively sized by horizontal position alone.
+function vbPt(svg,cx,cy){
+    try{const m=svg.getScreenCTM();
+        if(m&&typeof m.inverse==='function'&&svg.createSVGPoint){
+            const p=svg.createSVGPoint();p.x=cx;p.y=cy;
+            const q=p.matrixTransform(m.inverse());
+            if(isFinite(q.x)&&isFinite(q.y))return q;}}catch(e){}
+    const r=svg.getBoundingClientRect(), vb=svg.viewBox.baseVal;
+    const w=vb&&vb.width?vb.width:VB, h=vb&&vb.height?vb.height:r.height;
+    const sc=Math.min(r.width/w, r.height/h)||1;
+    return {x:(cx-r.left-(r.width-w*sc)/2)/sc, y:(cy-r.top-(r.height-h*sc)/2)/sc};}
+function vbX(svg,cx){return vbPt(svg,cx,0).x;}
+function vbY(svg,cy){return vbPt(svg,0,cy).y;}
+function vbToMm(svg,u){if(!pxPerMm)return null;const r=svg.getBoundingClientRect();
+    return +(u*(r.width/VB)/pxPerMm).toFixed(1);}
+function geomean(a){return Math.pow(a.reduce((x,y)=>x*y,1),1/a.length);}
+function ols(p){const n=p.length;let sx=0,sy=0,sxy=0,sxx=0;
+    p.forEach(q=>{sx+=q.x;sy+=q.y;sxy+=q.x*q.y;sxx+=q.x*q.x;});
+    const m=(n*sxy-sx*sy)/(n*sxx-sx*sx),b=(sy-m*sx)/n;let ssr=0,sst=0;const my=sy/n;
+    p.forEach(q=>{const pr=m*q.x+b;ssr+=(q.y-pr)**2;sst+=(q.y-my)**2;});
+    // slope SE and a 95% interval, so verdicts can test a hypothesis instead of a heuristic
+    const sxxc=sxx-sx*sx/n, se=n>2&&sxxc>0?Math.sqrt((ssr/(n-2))/sxxc):null;
+    const tcrit=n>2?TCRIT[Math.min(n-2,30)]||1.96:null;
+    return {slope:m,r2:sst>0?1-ssr/sst:1,n:n,se:se,
+            lo:se==null?null:m-tcrit*se, hi:se==null?null:m+tcrit*se};}
+// two-sided t at 0.05 by df
+const TCRIT={1:12.71,2:4.30,3:3.18,4:2.78,5:2.57,6:2.45,7:2.36,8:2.31,9:2.26,10:2.23,11:2.20,12:2.18,
+ 13:2.16,14:2.14,15:2.13,16:2.12,17:2.11,18:2.10,19:2.09,20:2.09,21:2.08,22:2.07,23:2.07,24:2.06,
+ 25:2.06,26:2.06,27:2.05,28:2.05,29:2.05,30:2.04};
+function rank(v){const ix=v.map((x,i)=>[x,i]).sort((a,b)=>a[0]-b[0]),r=new Array(v.length);
+    let i=0;while(i<ix.length){let j=i;while(j+1<ix.length&&ix[j+1][0]===ix[i][0])j++;
+    const a=(i+j)/2+1;for(let k=i;k<=j;k++)r[ix[k][1]]=a;i=j+1;}return r;}
+function spearman(p){const rx=rank(p.map(q=>q.x)),ry=rank(p.map(q=>q.y));
+    const n=rx.length,mx=rx.reduce((a,b)=>a+b)/n,my=ry.reduce((a,b)=>a+b)/n;
+    let nu=0,dx=0,dy=0;for(let i=0;i<n;i++){nu+=(rx[i]-mx)*(ry[i]-my);dx+=(rx[i]-mx)**2;dy+=(ry[i]-my)**2;}
+    return (dx&&dy)?nu/Math.sqrt(dx*dy):0;}
+function retest(d,kf,rf){const m={};d.forEach(x=>{const k=kf(x);(m[k]=m[k]||[]).push(rf(x));});
+    const df=Object.values(m).filter(v=>v.length>1).map(v=>Math.abs(Math.log10(v[0]/v[1])));
+    return df.length?Math.pow(10,df.reduce((a,b)=>a+b,0)/df.length):null;}
+function clampExp(e){if(!isFinite(e)||e<=0)return{v:1,c:true};
+    if(e<0.2)return{v:0.2,c:true};if(e>4)return{v:4,c:true};return{v:e,c:false};}
+function randStart(r){return r*Math.pow(10,Math.random()*1.2-0.6);}
+function nearCap(g){return g>=ceilingGain*0.995;}
+function nearFloor(g){return g<=(refCalGain/60)*1.005;}
+// ---- timing instrumentation: every response carries its own latency and position ----
+const T0=Date.now();
+let screenT=Date.now(), respSeq=0;
+function markScreen(){screenT=Date.now();}
+function stamp(){return {rt:Date.now()-screenT, t:Date.now()-T0, seq:respSeq++};}
+// ---- admissible reference band ----------------------------------------------------
+// A respondent-set reference is workable only if the whole stimulus set still fits: the
+// largest ratio must stay on the canvas and the smallest must stay visible. Both bounds
+// fall out of the stimulus set, so they are computed rather than guessed.
+const MIN_VISIBLE_LINE=6, MIN_VISIBLE_SIDE=10;
+function lineBand(ratios){
+    return {lo:Math.ceil(MIN_VISIBLE_LINE/Math.min(...ratios)), hi:Math.floor((MAX_HALF*2)/Math.max(...ratios))};}
+function areaBand(ratios){   // ratios are AREA ratios; side scales as sqrt
+    return {lo:Math.ceil(MIN_VISIBLE_SIDE/Math.sqrt(Math.min(...ratios))), hi:Math.floor(AREA_MAXS/Math.sqrt(Math.max(...ratios)))};}
+const bandB=()=>lineBand(LODGE_NUMS.map(n=>n/REF_NUMBER));
+const bandD=()=>areaBand(AREA_NUMS.map(n=>n/REF_NUMBER));
+const bandOpLine=()=>({lo:MIN_VISIBLE_LINE, hi:Math.floor((MAX_HALF*2)/INV_HEADROOM)});
+const bandOpArea=()=>({lo:MIN_VISIBLE_SIDE, hi:Math.floor(AREA_MAXS/Math.sqrt(areaHeadroomFor(INV_HEADROOM)))});
+function bandG(svg){let g=svg.querySelector('.bandg');
+    if(!g){g=document.createElementNS('http://www.w3.org/2000/svg','g');g.setAttribute('class','bandg');
+        svg.insertBefore(g,svg.firstChild);}
+    return g;}
+// paint the workable zone on the canvas, so the respondent can see where to aim
+function paintLineBand(svg,band,y){const g=bandG(svg);
+    const inner=centred
+      ? `<rect x="${LINE_CX-band.hi/2}" y="${y-11}" width="${(band.hi-band.lo)/2}" height="22" fill="#37474f" opacity="0.10"/>`+
+        `<rect x="${LINE_CX+band.lo/2}" y="${y-11}" width="${(band.hi-band.lo)/2}" height="22" fill="#37474f" opacity="0.10"/>`
+      : `<rect x="${MIN_X+band.lo}" y="${y-11}" width="${band.hi-band.lo}" height="22" fill="#159e79" opacity="0.14"/>`;
+    g.innerHTML=inner+`<text x="${centred?LINE_CX:MIN_X+band.lo+(band.hi-band.lo)/2}" y="${y-22}" text-anchor="middle" class="svglabel" fill="#37474f">end your line in this band</text>`;
+    g.setAttribute('visibility','visible');}
+function paintAreaBand(svg,band){const g=bandG(svg);
+    const at=side=>centred?`x="${AREA_CX-side/2}" y="${AREA_CY-side/2}"`:`x="${MIN_X}" y="${AREA_Y-side}"`;
+    g.innerHTML=`<rect ${at(band.hi)} width="${band.hi}" height="${band.hi}" fill="#37474f" opacity="0.10"/>`+
+                `<rect ${at(band.lo)} width="${band.lo}" height="${band.lo}" fill="#ffffff"/>`+
+                `<rect ${at(band.hi)} width="${band.hi}" height="${band.hi}" fill="none" stroke="#159e79" stroke-dasharray="6 5" stroke-width="2"/>`+
+                `<rect ${at(band.lo)} width="${band.lo}" height="${band.lo}" fill="none" stroke="#159e79" stroke-dasharray="6 5" stroke-width="2"/>`;
+    g.setAttribute('visibility','visible');}
+function hideBand(svg){const g=svg.querySelector('.bandg');if(g)g.setAttribute('visibility','hidden');}
+// A visible origin marker: in centred mode shapes grow symmetrically about this point, so
+// without it there is nothing indicating where the drag is anchored.
+function paintTarget(svg,x,y){
+    let g=svg.querySelector('.tgtg');
+    if(!g){g=document.createElementNS('http://www.w3.org/2000/svg','g');g.setAttribute('class','tgtg');
+        svg.appendChild(g);}
+    // No horizontal arm. It ran along the axis the line grows on, which made it a
+    // ruler: a fixed 26-unit span right next to the thing being judged. The vertical
+    // tick and dot mark the centre without offering anything to measure against.
+    g.innerHTML=`<circle cx="${x}" cy="${y}" r="4" fill="#b0b0b0"/>`;
+    g.setAttribute('visibility','visible');}
+function hideTarget(svg){const g=svg.querySelector('.tgtg');if(g)g.setAttribute('visibility','hidden');}
+function markTarget(svg,kind,lineY){
+    if(kind==='area')paintTarget(svg, centred?AREA_CX:MIN_X, centred?AREA_CY:AREA_Y);
+    else paintTarget(svg, centred?LINE_CX:MIN_X, lineY);}
+function bandMsg(v,band,what,big,small){
+    if(v>band.hi)return `That ${what} is too large: ${big} Please make it smaller.`;
+    if(v<band.lo)return `That ${what} is too small: ${small} Please make it larger.`;
+    return null;}
+const nearAreaCap=s=>s>=AREA_MAXS-1;      // drag clamps at AREA_MAXS; a clamped square is censored
+const nearLineCap=px=>px>=MAX_HALF*2-2;   // drag clamps at MAX_HALF*2; a clamped line is censored too.
+// A line at the wall is not the length the respondent wanted, it is the longest the canvas
+// allowed, so 20x and 50x and "as much as possible" all record identically. Area and loudness
+// have always been flagged; lines were not, and two of four pilot respondents hit this.
+function setSquare(el,side){el.setAttribute('width',side);el.setAttribute('height',side);
+    if(centred){el.setAttribute('x',AREA_CX-side/2);el.setAttribute('y',AREA_CY-side/2);}
+    else{el.setAttribute('x',MIN_X);el.setAttribute('y',AREA_Y-side);}}
+// lines are centred on LINE_CX and grow symmetrically, so extent must be judged, not endpoint position
+function setLine(el,len){len=Math.max(0,len);
+    if(centred){const h=len/2;el.setAttribute('x1',LINE_CX-h);el.setAttribute('x2',LINE_CX+h);}
+    else{el.setAttribute('x1',MIN_X);el.setAttribute('x2',MIN_X+len);}}
+
+// ================= SCREEN CAL =================
+let cardW=320;
+function renderCard(){$('cardBox').style.width=cardW+'px';pxPerMm=cardW/85.6;
+    $('cardRead').textContent=`${cardW}px = 85.6mm → ${pxPerMm.toFixed(2)} px/mm`;}
+$('cardPlus').addEventListener('click',()=>{cardW=Math.min(cardW+4,900);renderCard();});
+$('cardMinus').addEventListener('click',()=>{cardW=Math.max(cardW-4,120);renderCard();});
+renderCard();
+$('cfgShowRef').addEventListener('change',e=>showRef=e.target.checked);
+$('cfgAudio').addEventListener('change',e=>{useAudio=e.target.checked;
+    $('audioSetup').style.display=useAudio?'block':'none';
+    $('cfgOpLoud').disabled=!useAudio;if(!useAudio){$('cfgOpLoud').checked=false;opLoud=false;}
+    setupGate();});
+$('audioSetup').style.display='none';   // audio is off by default
+$('cfgDwell').addEventListener('change',e=>useDwell=e.target.checked);
+$('cfgShuffleMod').addEventListener('change',e=>shuffleMod=e.target.checked);
+$('cfgFixedOpRef').addEventListener('change',e=>{fixedOpRef=e.target.checked;
+    $('cfgPerItemRef').disabled=fixedOpRef;});
+$('cfgPerItemRef').disabled=true;
+$('cfgPerItemRef').addEventListener('change',e=>perItemRef=e.target.checked);
+$('cfgVAS').addEventListener('change',e=>useVAS=e.target.checked);
+$('pidInput').addEventListener('input',e=>{pid=e.target.value.trim();
+    if(pidSource&&pidSource.startsWith('url:')&&pid!==urlParams.get(pidSource.slice(4)))pidSource='typed (edited)';
+    else if(!pidSource)pidSource='typed';});
+// An id that arrived in the link is shown, not hidden: a silently-wrong id is worse
+// than no id, and this is the only chance anyone has to notice it.
+if(pid){$('pidInput').value=pid;
+    $('pidNote').textContent='from the link ('+pidSource.slice(4)+')';}
+else $('pidNote').textContent='no id in the link — type one if you are running this yourself';
+if(returnUrl)$('pidNote').textContent+=' · returns to '+returnUrl.replace(/^https?:\/\//,'').slice(0,40);
+$('cfgReconcile').addEventListener('change',e=>useReconcile=e.target.checked);
+$('cfgProgress').addEventListener('change',e=>{showProgress=e.target.checked;
+    document.body.classList.toggle('noprogress',!showProgress);});
+$('cfgHalves').addEventListener('change',e=>halves=e.target.checked);
+$('cfgOpArea').addEventListener('change',e=>opArea=e.target.checked);
+$('cfgOpLoud').addEventListener('change',e=>opLoud=e.target.checked);
+$('cfgLikertFirst').addEventListener('change',e=>likertFirst=e.target.checked);
+$('cfgPink').addEventListener('change',e=>usePink=e.target.checked);
+$('cfgFixedMod').addEventListener('change',e=>fixedMod=e.target.checked);
+$('cfgCenter').addEventListener('change',e=>centred=e.target.checked);
+$('cfgDouble').addEventListener('change',e=>doubleAB=e.target.checked);
+$('cfgSkip').addEventListener('change',e=>$('skipBtn').style.display=e.target.checked?'block':'none');
+
+// Sync every setting FROM the markup once, now that the listeners exist. Until
+// this, defaults lived in two unreconciled places -- the `checked` attributes and
+// the `let showRef=...` initialisers -- and a browser restoring form state across a
+// reload does not reliably fire `change`, so the panel could show one configuration
+// while the session ran another, with nothing to notice it. The markup is now the
+// single source of truth and the initialiser values are only a starting point.
+document.querySelectorAll('.cfg input[type=checkbox]').forEach(b=>b.dispatchEvent(new Event('change')));
+
+// ================= AUDIO =================
+let ctx=null,src=null,gn=null,playing=false,curBtn=null,curLbl='',seqTok=0;
+// Lodge et al. 1976 used BROAD BAND noise through TDH-39 earphones. No band-pass filtering:
+// loudness sums across critical bands, so band-limiting changes the growth function.
+function makeNoise(c,s,pink){const n=Math.floor(c.sampleRate*s),b=c.createBuffer(1,n,c.sampleRate),o=b.getChannelData(0);
+    if(!pink){for(let i=0;i<n;i++)o[i]=(Math.random()*2-1)*0.25;return b;}
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;for(let i=0;i<n;i++){const w=Math.random()*2-1;
+    b0=0.99886*b0+w*0.0555179;b1=0.99332*b1+w*0.0750759;b2=0.969*b2+w*0.153852;b3=0.8665*b3+w*0.3104856;
+    b4=0.55*b4+w*0.5329522;b5=-0.7616*b5-w*0.016898;o[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11;b6=w*0.115926;}return b;}
+function ensureCtx(){if(!ctx){ctx=new (window.AudioContext||window.webkitAudioContext)();
+    src=ctx.createBufferSource();src.buffer=makeNoise(ctx,6,usePink);src.loop=true;   // 6s buffer: loop not audible
+    gn=ctx.createGain();gn.gain.value=0;src.connect(gn).connect(ctx.destination);src.start();}  // NO filter — broadband
+    if(ctx.state==='suspended')ctx.resume();}
+function setGain(g){gn.gain.setTargetAtTime(Math.min(g,HARD_CAP),ctx.currentTime,RAMP);}
+function silence(){if(gn)gn.gain.setTargetAtTime(0,ctx.currentTime,RAMP);}
+function setStatus(id,mode){const el=$(id);if(!el)return;
+    el.className='sound-status'+(mode==='mine'?' mine':mode==='ref'?' ref':'');
+    el.innerHTML=mode==='mine'?'&#9654; Playing: YOUR sound':mode==='ref'?'&#9654; Playing: The reference':'Silent';}
+function clearStatuses(){['eStatus','fStatus','opLoudStatus'].forEach(i=>setStatus(i,'off'));}
+function stopSound(){seqTok++;silence();playing=false;if(curBtn){curBtn.classList.remove('active');curBtn.innerHTML=curLbl;curBtn=null;}clearStatuses();}
+function toggleSound(g,b,l){ensureCtx();if(playing&&curBtn===b)stopSound();
+    else{stopSound();playing=true;setGain(g);curBtn=b;curLbl=l;b.classList.add('active');b.innerHTML='&#9632; Stop';}}
+function stepMult(k,t){return Math.pow(k>0?STEP:1/STEP,1+Math.min((t||0)/8,4));}  // accelerates while held
+function bindHold(b,f){let t=null,n=0;const s=e=>{e.preventDefault();n=0;f(n++);t=setInterval(()=>f(n++),TICK_MS);};
+    const st=()=>{if(t){clearInterval(t);t=null;}};
+    b.addEventListener('mousedown',s);b.addEventListener('touchstart',s,{passive:false});
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(e=>b.addEventListener(e,st));}
+// Reference / my-sound TOGGLE: click to switch, click again to switch back. Starts audio if silent.
+const eABst={v:'mine'},fABst={v:'mine'},opABst={v:'mine'};
+function bindABToggle(btn,refF,mineF,statusId,playBtn,playLbl,st,mineLbl,refLbl){
+    btn.addEventListener('click',()=>{ensureCtx();
+        if(!playing){playing=true;curBtn=playBtn;curLbl=playLbl;playBtn.classList.add('active');playBtn.innerHTML='&#9632; Stop';}
+        if(st.v==='mine'){st.v='ref';setGain(refF());setStatus(statusId,'ref');btn.innerHTML=mineLbl;}
+        else{st.v='mine';setGain(mineF());setStatus(statusId,'mine');btn.innerHTML=refLbl;}});}
+// Classical present-the-standard order: each production trial opens playing the REFERENCE
+// and stays there until the participant switches (toggle button, or touching any adjust
+// control flips to their own sound). No timed auto-switch.
+function playSeq(playBtn,playLbl,statusId,refG,mineF,st,abBtn,refLbl){
+    ensureCtx();stopSound();playing=true;curBtn=playBtn;curLbl=playLbl;
+    playBtn.classList.add('active');playBtn.innerHTML='&#9632; Stop';
+    st.v='ref';setGain(refG);setStatus(statusId,'ref');
+    if(abBtn)abBtn.innerHTML='&#8646; Switch to my sound';}
+// Alternating low/high starting levels (random order in pairs): cancels the
+// direction-of-approach bias that a fixed ascending start would build in.
+const eAlt={q:[]},fAlt={q:[]},opAlt={q:[]};
+function altStart(st){if(st.q.length===0)st.q=shuffle(['low','high']);const side=st.q.pop();
+    st.last=side;
+    return side==='low'?Math.max(refCalGain/50,ceilingGain*(0.012+Math.random()*0.01))
+                       :ceilingGain*(0.7+Math.random()*0.18);}
+function bindDraw(svg,resp,onLen){let d=false;
+    const tgt=()=>typeof resp==='function'?resp():resp;   // target can change within a page
+    const mv=cx=>{if(svg.dataset.lock==='1')return;const vx=vbX(svg,cx);
+        const len=centred?Math.min(Math.abs(vx-LINE_CX)*2,MAX_HALF*2)
+                         :Math.max(0,Math.min(vx-MIN_X,MAX_X-MIN_X));
+        setLine(tgt(),len);onLen(len);};
+    svg.addEventListener('pointerdown',e=>{e.preventDefault();d=true;mv(e.clientX);});
+    svg.addEventListener('pointermove',e=>{if(d)mv(e.clientX);});
+    window.addEventListener('pointerup',()=>{d=false;});}
+// square: side = max(horizontal, vertical) drag from the bottom-left origin
+function bindSquare(svg,rect,onSide){let d=false;
+    const tgt=()=>typeof rect==='function'?rect():rect;
+    const mv=(cx,cy)=>{if(svg.dataset.lock==='1')return;const q=vbPt(svg,cx,cy),vx=q.x,vy=q.y;
+        const dx=centred?Math.abs(vx-AREA_CX)*2:vx-MIN_X;
+        const dy=centred?Math.abs(vy-AREA_CY)*2:AREA_Y-vy;
+        const side=Math.max(4,Math.min(Math.max(dx,dy),AREA_MAXS));setSquare(tgt(),side);onSide(side);};
+    svg.addEventListener('pointerdown',e=>{e.preventDefault();d=true;mv(e.clientX,e.clientY);});
+    svg.addEventListener('pointermove',e=>{if(d)mv(e.clientX,e.clientY);});
+    window.addEventListener('pointerup',()=>{d=false;});}
+
+// ================= SETUP =================
+let setupPlayed=false,louderTicks=0;
+function setupGate(){
+    // with audio off there is no ceiling to set — the Begin button is gated only when it matters
+    const ok=!useAudio||($('headphoneCheck').checked&&setupPlayed&&louderTicks>=12);
+    $('setCeilingBtn').disabled=!ok;
+    $('setupGateHint').textContent=!useAudio?'':ok?'✓ Ceiling set — you can begin calibration.':
+        (!setupPlayed?'Play the sound first, then hold Louder to set your ceiling.'
+         :'Hold Louder until the sound is loud but still comfortable — the ceiling must be set by you, not left at the default.');
+    $('setupGateHint').style.color=ok?'#2d7a3a':'#c0392b';}
+$('headphoneCheck').addEventListener('change',()=>{const on=$('headphoneCheck').checked;
+    ['setupPlayBtn','setupLouder','setupSofter'].forEach(i=>$(i).disabled=!on);setupGate();});
+$('setupPlayBtn').addEventListener('click',()=>{toggleSound(setupGain,$('setupPlayBtn'),'&#9654; Play sound');
+    if(playing&&curBtn===$('setupPlayBtn'))setupPlayed=true;setupGate();});
+function setupAdjust(d,t){ensureCtx();setupGain=Math.min(Math.max(setupGain*stepMult(d,t),0.002),HARD_CAP);
+    if(playing&&curBtn===$('setupPlayBtn'))setGain(setupGain);
+    if(d>0)louderTicks++;setupGate();}
+bindHold($('setupLouder'),t=>setupAdjust(1,t));bindHold($('setupSofter'),t=>setupAdjust(-1,t));
+setupGate();
+$('setCeilingBtn').addEventListener('click',()=>{
+    ceilingGain=useAudio?Math.min(setupGain,HARD_CAP):0.1;refCalGain=ceilingGain/10;
+    // Past setup the study title is chrome: nobody reads it again, and it is the
+    // largest text on the page, so it competes with the stimulus for attention.
+    stopSound();hide('setupPhase');$('pageHeader').style.display='none';toCalibIntro();});
+function toCalibIntro(){
+    document.querySelectorAll('.vax,.hax').forEach(el=>el.style.display=centred?'none':'');
+    $('calibIntroP1').innerHTML=fixedMod
+        ?' You will be shown a series of items one at a time in irregular order. Some are larger than the first item and some are smaller; your task is to say how much larger or smaller each one is compared to the first. The first item is your reference &mdash; <strong>we have given it the value 50</strong>.'+(useAudio?' (In the loudness blocks you will instead set a comfortable, moderate loudness for the reference.)':'')
+        :'  You will be shown a series of items one at a time in irregular order. Some are larger than the first item and some are smaller. The <strong>first item is your reference</strong> &mdash; give it any value that seems appropriate to you, then judge everything else in proportion to it.';
+    $('calibIntroP2').innerHTML=fixedMod
+        ?'For example, if an item seems about two times the reference, respond with a value of 100. If an item seems about ten times the reference&mdash; 500. If about one half, respond with about half of 50, that is, 25; one tenth &mdash; 5. Give whatever value seems appropriate: the larger the item compared with your reference, the bigger your response compared with 50; the smaller the item, the smaller your response.'
+        :'If an item seems twice your reference, give it twice the value; ten times &mdash; ten times the value; one half &mdash; half the value; one tenth &mdash; one tenth. There is no limit to the range you may use: whole numbers, decimals, or fractions, any value except zero.';
+    $('noLookBack').innerHTML=showRef?'Your reference stays visible for comparison.'
+        :'';
+    show('calibIntro');}
+
+// ================= STATE =================
+let aSeq=[],aIdx=0;const aData=[];let aAnc=null;
+let bSeq=[],bIdx=0;const bData=[];let bAnc=null;
+let cSeq=[],cIdx=0;const cData=[];let cAnc=null;
+let dSeq=[],dIdx=0;const dData=[];let dAncSide=null;
+let eSeq=[],eIdx=0;const eData=[];let eAnc=null;
+let fSeq=[],fIdx=0;const fData=[];let fAnc=null;
+let eGain=0.02,fGain=0.02,eStartSide=null,fStartSide=null,S={};
+// ---- range preview: show the full set of stimuli before each block ----
+let prevCb=null;
+function preview(kind,cb){
+    // In assigned-modulus mode the number previews are skipped: knowing the metric AND
+    // that the reference is 50 invites computed ratios instead of perceived ones.
+    if(fixedMod&&(kind==='B'||kind==='D'||kind==='F')){cb();return;}
+    prevCb=cb;
+    const mix=a=>shuffle([...a]);
+    let head='',instr='',html='';
+    if(kind==='A'||kind==='E'){
+        const rs=mix(kind==='A'?LODGE_RATIOS:LOUD_LINE_RATIOS);
+        head=kind==='A'?'The full range of lines you will judge'
+                       :'The full range of lines you will set a loudness for';
+        instr=kind==='A'
+            ?'These are all the lines you will judge, in no particular order. Notice that some are longer and some are shorter than others. You will judge them one at a time.'
+            :'These are all the lines you will set a loudness for. Look over the range first, then you will see them one at a time in mixed order.';
+        const H=rs.length*34+24;
+        html=`<svg height="${H}" viewBox="0 0 1700 ${H}" preserveAspectRatio="xMidYMid meet">`+
+            rs.map((r,i)=>{const L=REF_LINE*r,y=22+i*34;
+                const x1=centred?LINE_CX-L/2:MIN_X, x2=centred?LINE_CX+L/2:MIN_X+L;
+                return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${kind==='A'?'#2f6fd0':'#6a3fb5'}" stroke-width="5" stroke-linecap="round"/>`;}).join('')+
+            `</svg>`;
+    }
+    if(kind==='C'){
+        const rs=[...AREA_RATIOS].sort((x,y)=>y-x);
+        head='The full range of squares you will judge';
+        instr='These are all the squares you will judge so you can see the range of AREA covered. You will see them one at a time, in mixed order.';
+        const S=Math.round(REF_SIDE*Math.sqrt(Math.max(...AREA_RATIOS)))+60, base=S-30, midY=S/2;
+        html=`<svg class="areacanvas" viewBox="0 0 ${S} ${S}" preserveAspectRatio="xMidYMid meet">`+
+            (centred?'':`<line x1="40" y1="${base}" x2="${S-40}" y2="${base}" stroke="#d8d8d8" stroke-width="2"/>`+
+                        `<line x1="40" y1="${base}" x2="40" y2="16" stroke="#d8d8d8" stroke-width="2"/>`)+
+            rs.map(r=>{const sd=REF_SIDE*Math.sqrt(r);
+                const x=centred?S/2-sd/2:MIN_X, y=centred?midY-sd/2:base-sd;
+                return `<rect x="${x}" y="${y}" width="${sd}" height="${sd}" fill="none" stroke="#d2691e" stroke-width="3"/>`;}).join('')+
+            `</svg>`;
+    }
+    if(kind==='B'||kind==='D'||kind==='F'){
+        const ns=mix(kind==='B'?LODGE_NUMS:kind==='D'?AREA_NUMS:LOUD_NUMS);
+        const col=kind==='B'?'#2f6fd0':kind==='D'?'#d2691e':'#6a3fb5';
+        head=kind==='B'?'The full range of numbers you will draw a line for'
+             :kind==='D'?'The full range of numbers you will make a square for'
+                        :'The full range of numbers you will set a loudness for';
+        instr=kind==='B'?'These are all the numbers you will draw a line for, in no particular order. Notice that some are far larger and some far smaller than others.'
+             :kind==='D'?'These are all the numbers you will make a square for. Look over the range first.'
+             :'These are all the numbers you will set a loudness for. Look over the range first.';
+        html='<div style="font-size:30px;font-weight:700;color:'+col+';display:flex;gap:30px;flex-wrap:wrap;margin:18px 0;">'+
+            ns.map(n=>`<span>${n}</span>`).join('')+'</div>';
+    }
+    // innerHTML, not textContent: the shared framing carries markup. All of this
+    // text is authored here -- no respondent input reaches it.
+    $('prevHead').textContent=head;
+    // No apparent-magnitude line here: the reference trial now precedes this screen
+    // and carries the full framing, and the calibration intro carries it for every
+    // block. This page only shows the spread of stimuli.
+    $('prevInstr').innerHTML=(instr+' '+QUICK_INSTR).trim();
+    $('prevContent').innerHTML=html;
+    show('previewPhase');
+}
+$('prevNext').addEventListener('click',()=>{hide('previewPhase');if(prevCb)prevCb();});
+// Called once per block, immediately after the REFERENCE trial is confirmed.
+// Lodge's order: the standard first, the range second. In assigned-modulus mode the
+// number previews are skipped inside preview(), so this is a no-op for B/D/F there.
+function afterAnchor(kind,blockId,render){
+    hide(blockId);preview(kind,()=>{show(blockId);render();});}
+
+$('calibStart').addEventListener('click',()=>{
+    aSeq=withRepeats(LODGE_RATIOS,1,doubleAB?'double':1);
+    bSeq=withRepeats(LODGE_NUMS,REF_NUMBER,doubleAB?'double':1);
+    cSeq=withRepeats(AREA_RATIOS,1,1);dSeq=withRepeats(AREA_NUMS,REF_NUMBER,1);
+    eSeq=withRepeats(LOUD_LINE_RATIOS,1,1);fSeq=withRepeats(LOUD_NUMS,REF_NUMBER,1);
+    hide('calibIntro');show('blockA');renderA();});
+
+// ---- A ----
+const aSvg=$('aSvg'),aInput=$('aInput'),aNext=$('aNext');
+function renderA(){markScreen();const an=aIdx===0;
+    $('aProg').innerHTML=`Line ${aIdx+1} of ${aSeq.length}`+(an?' <span class="anchorbadge">Your reference</span>':'');
+    setLine($('aStim'),REF_LINE*aSeq[aIdx]);
+    $('aHead').textContent=an?(fixedMod?'This line has the value '+REF_NUMBER:'Give this line any number that seems appropriate'):'How long is this line?';
+    $('aInstr').innerHTML=(an?(fixedMod?'This first line is your reference. It has been assigned the value '+REF_NUMBER+'. Judge every other line in proportion to it.':'This first line is your reference.')
+        :'In proportion to your reference.')
+        +' '+(an?APPARENT_LINE:SHORT_LINE);
+    const v=!an&&showRef&&aAnc!=null;
+    $('aAnchor').setAttribute('visibility',v?'visible':'hidden');$('aAnchorLbl').setAttribute('visibility',v?'visible':'hidden');
+    if(v){setLine($('aAnchor'),REF_LINE);$('aAnchorLbl').textContent=(fixedMod?'the reference = ':'your reference = ')+aAnc;}
+    if(an&&fixedMod){aInput.value=REF_NUMBER;aInput.disabled=true;aNext.disabled=false;}
+    else{aInput.disabled=false;aInput.value='';aNext.disabled=true;}
+    if(an)beginDwell(aNext,'Continue',()=>{aNext.disabled=!(parseFloat(aInput.value)>0);});
+    else{dwellActive=false;clearInterval(dwellTimer);}}
+aInput.addEventListener('input',()=>aNext.disabled=!(parseFloat(aInput.value)>0)||dwellActive);
+aNext.addEventListener('click',()=>{if(aIdx===0)aAnc=parseFloat(aInput.value);
+    aData.push({lineRatio:aSeq[aIdx],mm:vbToMm(aSvg,REF_LINE*aSeq[aIdx]),number:parseFloat(aInput.value),assigned:(aIdx===0&&fixedMod),...stamp()});
+    aIdx++;
+    if(aIdx===1&&aIdx<aSeq.length){afterAnchor('A','blockA',renderA);return;}
+    if(aIdx===Math.ceil(aSeq.length/2)&&aIdx<aSeq.length){remind('A',()=>{show('blockA');renderA();});}
+    else if(aIdx<aSeq.length)renderA();
+    else{hide('blockA');show('blockB');renderB();}});
+
+// ---- B ----
+const bSvg=$('bSvg'),bConfirm=$('bConfirm');let bLen=0;
+bindDraw(bSvg,$('bResp'),l=>{bLen=l;bConfirm.disabled=l<4||dwellActive;
+    if(bIdx===0&&!fixedMod){const bd=bandB(),msg=bandMsg(l,bd,'reference line',
+        `the largest number (${Math.max(...LODGE_NUMS)}) needs a line ${(Math.max(...LODGE_NUMS)/REF_NUMBER).toFixed(1)}x this long, which will not fit.`,
+        `the smallest number (${Math.min(...LODGE_NUMS)}) would need a line about ${(l*Math.min(...LODGE_NUMS)/REF_NUMBER).toFixed(0)}px long, too short to draw.`);
+        $('bRefWarn').innerHTML=msg||'';$('bRefWarn').style.display=msg?'block':'none';}
+    else $('bRefWarn').style.display='none';
+    $('bCapWarn').style.display=(bIdx>0&&nearLineCap(l))?'block':'none';});
+function renderB(){markScreen();const an=bIdx===0;
+    $('bProg').innerHTML=`Number ${bIdx+1} of ${bSeq.length}`+(an?' <span class="anchorbadge">'+(fixedMod?'The reference':'Your reference')+'</span>':'');
+    $('bTarget').textContent=bSeq[bIdx];
+    bSvg.dataset.lock=(an&&fixedMod)?'1':'0';
+    // The assigned-modulus anchor page only SHOWS the reference -- the canvas is
+    // locked and the response shape is hidden -- so a hint telling the respondent
+    // how to drag describes something the page will not let them do.
+    $('bDragHint').style.display=(an&&fixedMod)?'none':'';
+    bSvg.style.cursor=(an&&fixedMod)?'default':'';
+    $('bInstr').textContent=an?(fixedMod?'The number '+REF_NUMBER+' stands for the line shown above. Just look — there is nothing to draw on this page — then press Continue.'
+                                        :'Draw any line that seems appropriate — it becomes your reference. Choose a smallish line: later numbers go up to six times this one, and your lines need room to grow.')
+        :'In proportion to your reference.';
+    // A locked reference page has nothing to produce, so the "draw it so it looks
+    // right" framing contradicts the sentence right before it ("there is nothing to
+    // draw on this page"). It belongs on the trials where something is actually made.
+    $('bInstr').innerHTML=$('bInstr').textContent+((an&&fixedMod)?'':' '+(an?APPARENT_MAKE_LINE:SHORT_LINE))
+        +(an?' '+READY_CONTINUE(fixedMod?'Continue':'Confirm'):'');
+    setLine($('bResp'),0);bLen=0;
+    $('bResp').setAttribute('visibility',(an&&fixedMod)?'hidden':'visible');
+    $('bRefWarn').style.display='none';$('bCapWarn').style.display='none';
+    if(an&&!fixedMod)paintLineBand(bSvg,bandB(),64); else hideBand(bSvg);
+    // Anchor trial = the page that shows the reference: no centre mark, or it becomes
+    // something to measure the reference against. Elsewhere it is the drag origin.
+    if(an)hideTarget(bSvg); else markTarget(bSvg,'line',88);   // 88 = bResp's own y
+    bConfirm.textContent=(an&&fixedMod)?'Continue':'Confirm';
+    bConfirm.disabled=!(an&&fixedMod);
+    if(an)beginDwell(bConfirm,(an&&fixedMod)?'Continue':'Confirm',()=>{bConfirm.disabled=(an&&fixedMod)?false:bLen<4;});
+    else{dwellActive=false;clearInterval(dwellTimer);}
+    const v=(an&&fixedMod)||(!an&&showRef&&bAnc!=null);
+    $('bAnchor').setAttribute('visibility',v?'visible':'hidden');$('bAnchorLbl').setAttribute('visibility',v?'visible':'hidden');
+    if(v){setLine($('bAnchor'),(an&&fixedMod)?REF_LINE:bAnc);
+        $('bAnchorLbl').textContent=(fixedMod?'the reference = ':'your reference = ')+REF_NUMBER;}}
+bConfirm.addEventListener('click',()=>{
+    if(bIdx===0){bAnc=fixedMod?REF_LINE:bLen;
+        bData.push({number:bSeq[bIdx],lineRatio:fixedMod?1:(bLen/REF_LINE),mm:vbToMm(bSvg,fixedMod?REF_LINE:bLen),assigned:fixedMod});}
+    else bData.push({number:bSeq[bIdx],lineRatio:bLen/REF_LINE,mm:vbToMm(bSvg,bLen),capped:nearLineCap(bLen),...stamp()});
+    bIdx++;
+    if(bIdx===1&&bIdx<bSeq.length){afterAnchor('B','blockB',renderB);return;}
+    if(bIdx===Math.ceil(bSeq.length/2)&&bIdx<bSeq.length){remind('B',()=>{show('blockB');renderB();});}
+    else if(bIdx<bSeq.length)renderB();
+    else{hide('blockB');show('blockC');renderC();}});
+
+// ---- C: number for an area ----
+const cInput=$('cInput'),cNext=$('cNext');
+function renderC(){markScreen();const an=cIdx===0;
+    $('cProg').innerHTML=`Square ${cIdx+1} of ${cSeq.length}`+(an?' <span class="anchorbadge">Your reference</span>':'');
+    setSquare($('cStim'),REF_SIDE*Math.sqrt(cSeq[cIdx]));
+    $('cHead').textContent=an?(fixedMod?'This square has the value '+REF_NUMBER:'Give this square any number that seems appropriate'):'How much space does this square cover?';
+    $('cInstr').textContent=an?(fixedMod?'This first square is your reference and has been assigned the value '+REF_NUMBER+'. Judge how much AREA later squares cover in proportion to it.'
+                                        :'This first square is your reference.')
+        :'In proportion to your reference square.';
+    $('cInstr').innerHTML=$('cInstr').textContent+' '+(an?APPARENT_AREA:SHORT_AREA);
+    const v=!an&&showRef&&cAnc!=null;
+    $('cAnchor').setAttribute('visibility',v?'visible':'hidden');
+    if(v)setSquare($('cAnchor'),REF_SIDE);
+    if(an&&fixedMod){cInput.value=REF_NUMBER;cInput.disabled=true;cNext.disabled=false;}
+    else{cInput.disabled=false;cInput.value='';cNext.disabled=true;}
+    if(an)beginDwell(cNext,'Continue',()=>{cNext.disabled=!(parseFloat(cInput.value)>0);});
+    else{dwellActive=false;clearInterval(dwellTimer);}}
+cInput.addEventListener('input',()=>cNext.disabled=!(parseFloat(cInput.value)>0)||dwellActive);
+cNext.addEventListener('click',()=>{if(cIdx===0)cAnc=parseFloat(cInput.value);
+    cData.push({areaRatio:cSeq[cIdx],number:parseFloat(cInput.value),assigned:(cIdx===0&&fixedMod),...stamp()});
+    cIdx++;
+    if(cIdx===1&&cIdx<cSeq.length){afterAnchor('C','blockC',renderC);return;}
+    if(cIdx<cSeq.length)renderC();else{hide('blockC');show('blockD');renderD();}});
+
+// ---- D: area for a number ----
+const dSvg=$('dSvg'),dConfirm=$('dConfirm');let dSide=0;
+bindSquare(dSvg,$('dResp'),s=>{dSide=s;dConfirm.disabled=s<8||dwellActive;
+    // the reference must leave room for a 6x AREA target: side_max = 500 / sqrt(6) = 204
+    if(dIdx===0&&!fixedMod){const bd=bandD(),msg=bandMsg(s,bd,'reference square',
+        `the largest number (${Math.max(...AREA_NUMS)}) needs ${(Math.max(...AREA_NUMS)/REF_NUMBER).toFixed(1)}x this AREA, which will not fit.`,
+        `the smallest number would give a square too small to see.`);
+        $('dRefWarn').innerHTML=msg||'';$('dRefWarn').style.display=msg?'block':'none';}
+    else $('dRefWarn').style.display='none';
+    $('dCapWarn').style.display=(dIdx>0&&nearAreaCap(s))?'block':'none';});
+function renderD(){markScreen();const an=dIdx===0;
+    $('dProg').innerHTML=`Number ${dIdx+1} of ${dSeq.length}`+(an?' <span class="anchorbadge">'+(fixedMod?'The reference':'Your reference')+'</span>':'');
+    $('dTarget').textContent=dSeq[dIdx];
+    dSvg.dataset.lock=(an&&fixedMod)?'1':'0';
+    $('dDragHint').style.display=(an&&fixedMod)?'none':'';
+    dSvg.style.cursor=(an&&fixedMod)?'default':'';
+    $('dInstr').textContent=an?(fixedMod?'The number '+REF_NUMBER+' stands for the outlined square. Just look — there is nothing to make on this page — then press Continue.'
+                                        :'Make any square that seems appropriate for this number — it becomes your reference. Keep it smallish: later numbers go up to six times this one.')
+        :'In proportion to your reference square.';
+    $('dInstr').innerHTML=$('dInstr').textContent+((an&&fixedMod)?'':' '+(an?APPARENT_MAKE_AREA:SHORT_AREA))
+        +(an?' '+READY_CONTINUE(fixedMod?'Continue':'Confirm'):'');
+    setSquare($('dResp'),0);dSide=0;
+    $('dResp').setAttribute('visibility',(an&&fixedMod)?'hidden':'visible');
+    $('dRefWarn').style.display='none';
+    if(an&&!fixedMod)paintAreaBand(dSvg,bandD()); else hideBand(dSvg);
+    markTarget(dSvg,'area');
+    dConfirm.textContent=(an&&fixedMod)?'Continue':'Confirm';
+    dConfirm.disabled=!(an&&fixedMod);
+    if(an)beginDwell(dConfirm,(an&&fixedMod)?'Continue':'Confirm',()=>{dConfirm.disabled=(an&&fixedMod)?false:dSide<8;});
+    else{dwellActive=false;clearInterval(dwellTimer);}
+    const v=(an&&fixedMod)||(!an&&showRef&&dAncSide!=null);
+    $('dAnchor').setAttribute('visibility',v?'visible':'hidden');
+    if(v)setSquare($('dAnchor'),(an&&fixedMod)?REF_SIDE:dAncSide);}
+dConfirm.addEventListener('click',()=>{
+    if(dIdx===0){dAncSide=fixedMod?REF_SIDE:dSide;
+        dData.push({number:dSeq[dIdx],areaRatio:1,sidePx:+(fixedMod?REF_SIDE:dSide).toFixed(1),assigned:fixedMod});}
+    else dData.push({number:dSeq[dIdx],areaRatio:Math.pow(dSide/(dAncSide||dSide),2),sidePx:+dSide.toFixed(1),capped:nearAreaCap(dSide),...stamp()});
+    dIdx++;
+    if(dIdx===1&&dIdx<dSeq.length){afterAnchor('D','blockD',renderD);return;}
+    if(dIdx<dSeq.length)renderD();
+    else if(useAudio){hide('blockD');show('blockE');renderE();}
+    else{hide('blockD');fitCalibration();}});
+
+// ---- E: loudness for a line ----
+const ePlay=$('ePlay'),eAB=$('eAB');
+function renderE(){const an=eIdx===0;
+    $('eProg').innerHTML=`Line ${eIdx+1} of ${eSeq.length}`+(an?' <span class="anchorbadge">Your reference</span>':'');
+    setLine($('eStim'),REF_LINE*eSeq[eIdx]);
+    $('eHead').textContent=an?'Set any loudness that matches this line':'Set a loudness to match this line';
+    $('eInstr').textContent=an?(fixedMod?'This first line is your reference. Set a COMFORTABLE loudness for it — later sounds are proportional to this comfortable level.'
+                                         :'This first line is your reference. Set any loudness that seems to go with it.')
+        :'The longer the line compared with your reference line, the louder your sound.';
+    const v=!an&&eAnc!=null;
+    $('eAnchor').setAttribute('visibility',v?'visible':'hidden');$('eAnchorLbl').setAttribute('visibility',v?'visible':'hidden');
+    if(v)setLine($('eAnchor'),REF_LINE);
+    eAB.style.display=v?'inline-block':'none';
+    eGain=an?randStart(refCalGain):altStart(eAlt);eStartSide=an?'free':eAlt.last;
+    $('eCapWarn').style.display='none';$('eRefWarn').style.display='none';
+    if(v)playSeq(ePlay,'&#9654; Play my sound','eStatus',eAnc||refCalGain,()=>eGain,eABst,eAB,'&#8646; Switch to reference');
+    else{stopSound();ePlay.innerHTML='&#9654; Play my sound';eABst.v='mine';}}
+function eAdj(k,t){ensureCtx();eGain=Math.min(Math.max(eGain*stepMult(k,t),refCalGain/60),ceilingGain);
+    if(eABst.v==='ref'){eABst.v='mine';eAB.innerHTML='&#8646; Switch to reference';}
+    if(playing&&curBtn===ePlay){setGain(eGain);setStatus('eStatus','mine');}
+    $('eRefWarn').style.display=(eIdx===0&&eGain>ceilingGain/8)?'block':'none';
+    $('eCapWarn').style.display=nearCap(eGain)?'block':'none';}
+bindHold($('eLouder'),t=>eAdj(1,t));bindHold($('eSofter'),t=>eAdj(-1,t));
+ePlay.addEventListener('click',()=>{toggleSound(eGain,ePlay,'&#9654; Play my sound');
+    eABst.v='mine';eAB.innerHTML='&#8646; Switch to reference';
+    setStatus('eStatus',(playing&&curBtn===ePlay)?'mine':'off');});
+bindABToggle(eAB,()=>eAnc||refCalGain,()=>eGain,'eStatus',ePlay,'&#9654; Play my sound',eABst,'&#8646; Switch to my sound','&#8646; Switch to reference');
+$('eConfirm').addEventListener('click',()=>{if(eIdx===0)eAnc=eGain;
+    eData.push({lineRatio:eSeq[eIdx],pressureRatio:eGain/(eAnc||eGain),gain:+eGain.toFixed(5),startSide:eStartSide,capped:nearCap(eGain),floored:nearFloor(eGain)});
+    eIdx++;
+    if(eIdx===1&&eIdx<eSeq.length){stopSound();afterAnchor('E','blockE',renderE);return;}
+    if(eIdx<eSeq.length)renderE();else{stopSound();hide('blockE');show('blockF');renderF();}});
+
+// ---- F: loudness for a number ----
+const fPlay=$('fPlay'),fAB=$('fAB');
+function renderF(){const an=fIdx===0;
+    $('fProg').innerHTML=`Number ${fIdx+1} of ${fSeq.length}`+(an?' <span class="anchorbadge">Your reference</span>':'');
+    $('fTarget').textContent=fSeq[fIdx];
+    $('fInstr').textContent=an?(fixedMod?'Set a COMFORTABLE loudness for the number '+REF_NUMBER+'. It becomes your reference.'
+                                         :'Set any loudness that seems appropriate for this number. It becomes your reference.')
+        :'The larger the number compared with your reference number, the louder your sound.';
+    fAB.style.display=(!an&&fAnc!=null)?'inline-block':'none';
+    fGain=an?randStart(refCalGain):altStart(fAlt);fStartSide=an?'free':fAlt.last;
+    $('fCapWarn').style.display='none';$('fRefWarn').style.display='none';
+    const auto=!an&&fAnc!=null;
+    if(auto)playSeq(fPlay,'&#9654; Play my sound','fStatus',fAnc||refCalGain,()=>fGain,fABst,fAB,'&#8646; Switch to reference');
+    else{stopSound();fPlay.innerHTML='&#9654; Play my sound';fABst.v='mine';}}
+function fAdj(k,t){ensureCtx();fGain=Math.min(Math.max(fGain*stepMult(k,t),refCalGain/60),ceilingGain);
+    if(fABst.v==='ref'){fABst.v='mine';fAB.innerHTML='&#8646; Switch to reference';}
+    if(playing&&curBtn===fPlay){setGain(fGain);setStatus('fStatus','mine');}
+    $('fRefWarn').style.display=(fIdx===0&&fGain>ceilingGain/8)?'block':'none';
+    $('fCapWarn').style.display=nearCap(fGain)?'block':'none';}
+bindHold($('fLouder'),t=>fAdj(1,t));bindHold($('fSofter'),t=>fAdj(-1,t));
+fPlay.addEventListener('click',()=>{toggleSound(fGain,fPlay,'&#9654; Play my sound');
+    fABst.v='mine';fAB.innerHTML='&#8646; Switch to reference';
+    setStatus('fStatus',(playing&&curBtn===fPlay)?'mine':'off');});
+bindABToggle(fAB,()=>fAnc||refCalGain,()=>fGain,'fStatus',fPlay,'&#9654; Play my sound',fABst,'&#8646; Switch to my sound','&#8646; Switch to reference');
+$('fConfirm').addEventListener('click',()=>{if(fIdx===0)fAnc=fGain;
+    fData.push({number:fSeq[fIdx],pressureRatio:fGain/(fAnc||fGain),gain:+fGain.toFixed(5),startSide:fStartSide,capped:nearCap(fGain),floored:nearFloor(fGain)});
+    fIdx++;
+    if(fIdx===1&&fIdx<fSeq.length){stopSound();afterAnchor('F','blockF',renderF);return;}
+    if(fIdx<fSeq.length)renderF();else{stopSound();fitCalibration();}});
+
+document.addEventListener('keydown',e=>{
+    if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;const u=e.key==='ArrowUp';
+    if(!$('blockE').classList.contains('hidden')){e.preventDefault();eAdj(u?1:-1);}
+    else if(!$('blockF').classList.contains('hidden')){e.preventDefault();fAdj(u?1:-1);}
+    else if(!$('opModality').classList.contains('hidden')&&$('opLoudPane').style.display==='block'){e.preventDefault();opLoudAdj(u?1:-1);}
+    else if(!$('setupPhase').classList.contains('hidden')){e.preventDefault();setupAdjust(u?1:-1);}});
+
+// ================= CRITERION TEST =================
+// Lodge showed 9 stimuli once each; at 18 the reference sits far further back than his
+// design ever asked. This redisplays it once, at the halfway point.
+let remindCb=null;
+function remind(kind,cb){
+    if(!(halves&&doubleAB)){cb();return;}
+    remindCb=cb;
+    const isA=kind==='A';
+    $('remindInstr').innerHTML=isA
+        ? 'You are halfway. This is the reference line again, with the value '+(fixedMod?REF_NUMBER:aAnc)+' that goes with it. Keep judging the remaining lines in proportion to it.'
+        : 'You are halfway. This is the reference line again — it stands for the number '+REF_NUMBER+'. Keep drawing the remaining lines in proportion to it.';
+    setLine($('remindLine'),REF_LINE);
+    $('remindNum').textContent=isA?(fixedMod?REF_NUMBER:aAnc):REF_NUMBER;
+    hide(isA?'blockA':'blockB');show('remindPhase');}
+$('remindNext').addEventListener('click',()=>{hide('remindPhase');const c=remindCb;remindCb=null;if(c)c();});
+function fitCalibration(){
+    const own=d=>!d.assigned;   // assigned anchors are not participant judgments — exclude from fits
+    const pA=aData.filter(own).map(d=>({x:Math.log10(d.lineRatio),y:Math.log10(d.number)}));
+    // a clamped line is censored for the same reason a clamped square is: including it
+    // flattens the B slope, which propagates into ELN, kLine and every item score
+    const pB=bData.filter(d=>own(d)&&!d.capped).map(d=>({x:Math.log10(d.number/REF_NUMBER),y:Math.log10(d.lineRatio)}));
+    const censB=bData.filter(d=>own(d)&&d.capped).length;
+    const pC=cData.filter(own).map(d=>({x:Math.log10(d.areaRatio),y:Math.log10(d.number)}));
+    // a clamped square is a censored observation: including it flattens the D slope, which
+    // propagates straight into EAN and the area-exponent verdict
+    const pD=dData.filter(d=>d.areaRatio>0&&own(d)&&!d.capped).map(d=>({x:Math.log10(d.number/REF_NUMBER),y:Math.log10(d.areaRatio)}));
+    const censD=dData.filter(d=>own(d)&&d.capped).length;
+    const okT=d=>d.pressureRatio>0&&!d.capped&&!d.floored;
+    const pE=eData.filter(okT).map(d=>({x:Math.log10(d.lineRatio),y:Math.log10(d.pressureRatio)}));
+    const pF=fData.filter(okT).map(d=>({x:Math.log10(d.number/REF_NUMBER),y:Math.log10(d.pressureRatio)}));
+    const cens={E:eData.filter(d=>d.capped||d.floored).length,F:fData.filter(d=>d.capped||d.floored).length};
+    const NA={slope:null,r2:null};
+    const fA=ols(pA),fB=ols(pB),fC=ols(pC),fD=ols(pD);
+    const fE=pE.length>1?ols(pE):NA, fF=pF.length>1?ols(pF):NA;
+    const rho={A:spearman(pA),B:spearman(pB),C:spearman(pC),D:spearman(pD),
+               E:pE.length>1?spearman(pE):null,F:pF.length>1?spearman(pF):null};
+    // both-direction bias cancellation
+    const ELN=Math.sqrt(fB.slope*(1/fA.slope)), rbLN=Math.sqrt((1/fA.slope)/fB.slope);
+    const EAN=Math.sqrt(fD.slope*(1/fC.slope)), rbAN=Math.sqrt((1/fC.slope)/fD.slope);
+    const areaExp=1/EAN;                       // recovered area exponent, expect ~0.7
+    // side-vs-area strategy diagnostic
+    // area CI, propagated from both directions (geometric mean of C and 1/D)
+    const areaLo=(fC.lo!=null&&fD.hi!=null&&fD.hi>0)?Math.sqrt(Math.max(fC.lo,0.01)/fD.hi):null;
+    const areaHi=(fC.hi!=null&&fD.lo!=null&&fD.lo>0)?Math.sqrt(fC.hi/fD.lo):null;
+    const areaCI=(areaLo!=null&&areaHi!=null)?` [95% CI ${areaLo.toFixed(2)}–${areaHi.toFixed(2)}]`:'';
+    // Three landmarks, all exact:
+    //   0.50 = judging the SIDE. side = area^0.5 and length has exponent ~1.0, so psi ~ area^0.5.
+    //          (C would read 0.50 and D 2.00; sqrt(2.00/0.50) = 2.00, so areaExp = 0.50.)
+    //   0.70 = judging AREA, the Stevens prediction.
+    //   1.00 = responses LINEAR in physical area — no perceptual compression at all, which
+    //          indicates computation or category translation rather than a magnitude judgment.
+    // Squares under successive presentation legitimately run 0.75-0.8, so a verdict is only
+    // given when the 95% interval EXCLUDES the 0.70 prediction.
+    const AREA_PRED=0.70;
+    const belowPred=areaHi!=null&&areaHi<AREA_PRED;   // significantly more compressed than area
+    const abovePred=areaLo!=null&&areaLo>AREA_PRED;   // significantly less compressed than area
+    const near=(v,t)=>Math.abs(Math.log(v/t))<Math.log(1.15);
+    const strat =
+        belowPred ? (near(areaExp,0.50)
+            ? 'area judged as SIDE LENGTH (0.50 is the exact side-judging landmark; the interval excludes the area prediction)'
+            : 'more compressed than the area prediction; the interval excludes 0.70 and runs toward the 0.50 side-judging landmark')
+      : abovePred ? (near(areaExp,1.00)
+            ? 'responses are close to LINEAR in physical area — no perceptual compression, which points to arithmetic or category translation rather than a magnitude judgment'
+            : 'less compressed than the area prediction; the interval excludes 0.70 and runs toward 1.00 (linear in physical area)')
+      : near(areaExp,0.50) ? 'point estimate sits on the 0.50 side-judging landmark, but the interval still covers the area prediction'
+      : near(areaExp,1.00) ? 'point estimate near 1.00 (linear in physical area), but the interval still covers the area prediction'
+      : 'consistent with true area judgment (~0.7)';
+    // loudness: both blocks are productions -> not cancellable
+    const hasL=fE.slope!=null&&fF.slope!=null;
+    const predF=hasL?fE.slope*ELN:null, trans=hasL?fF.slope/predF:null;
+    const kLine=clampExp(1/ELN),kArea=clampExp(1/EAN),kLoud=hasL?clampExp(1/fF.slope):{v:1,c:false};
+    S={fA,fB,fC,fD,fE,fF,rho,ELN,EAN,areaExp,areaLo,areaHi,strat,rbLN,rbAN,predF,trans,
+       kLine:kLine.v,kArea:kArea.v,kLoud:kLoud.v,clamped:kLine.c||kArea.c||kLoud.c,cens,censB,
+       retest:{A:retest(aData.filter(own),d=>d.lineRatio,d=>d.number),B:retest(bData.filter(own),d=>d.number,d=>d.lineRatio),
+               C:retest(cData.filter(own),d=>d.areaRatio,d=>d.number),D:retest(dData.filter(own),d=>d.number,d=>d.areaRatio),
+               E:eData.length?retest(eData,d=>d.lineRatio,d=>d.pressureRatio):null,
+               F:fData.length?retest(fData,d=>d.number,d=>d.pressureRatio):null}};
+    const rt=v=>v==null?'&mdash;':(v<1.15?'<span style="color:#2d7a3a">':'<span style="color:#c0392b">')+v.toFixed(2)+'×</span>';
+    const rh=v=>v==null?'&mdash;':(v>0.9?'<span style="color:#2d7a3a">':'<span style="color:#c0392b">')+v.toFixed(2)+'</span>';
+    let h='<tr><th>Block</th><th>Slope [95% CI]</th><th>Expected</th><th>R²</th><th>ρ</th><th>Test–retest</th></tr>';
+    [['A · number for a line',fA,'1.00','A'],['B · line for a number',fB,'1.00','B'],
+     ['C · number for an area',fC,'0.70','C'],['D · area for a number',fD,'1.43','D'],
+     ['E · loudness for a line',fE,'1.50','E'],['F · loudness for a number',fF,'1.50','F']]
+     .filter(r=>r[1].slope!=null)   // loudness rows only exist when the audio blocks were run
+     .forEach(r=>{const f=r[1],cov=f.lo!=null&&f.lo<=+r[2]&&f.hi>=+r[2];
+        h+=`<tr><td>${r[0]}</td><td>${f.slope.toFixed(3)}${f.lo!=null?` <span style="color:#888;font-size:var(--fs-cfg);">[${f.lo.toFixed(2)}–${f.hi.toFixed(2)}]</span>`:''}</td>`+
+           `<td>${r[2]}${f.lo!=null?(cov?' <span style="color:#2d7a3a">✓</span>':' <span style="color:#c0392b">✗</span>'):''}</td>`+
+           `<td>${f.r2.toFixed(3)}</td><td>${rh(rho[r[3]])}</td><td>${rt(S.retest[r[3]])}</td></tr>`;});
+    $('calibTable').innerHTML=h;
+    S.censD=censD;
+    // criterion test: does each 95% interval cover the predicted exponent of 1.0?
+    const covers=(f,e)=>f.lo!=null&&f.lo<=e&&f.hi>=e;
+    const linePass=covers(fA,1)&&covers(fB,1)&&fA.r2>0.9&&fB.r2>0.9;
+    const ci=f=>f.lo==null?'':` <span style="color:#888;font-size:var(--fs-cfg);">[${f.lo.toFixed(2)}–${f.hi.toFixed(2)}]</span>`;
+    const monoOK=Object.values(rho).filter(r=>r!=null).every(r=>r>0.9);
+    const v=$('calibVerdict');v.className='verdict '+(linePass&&monoOK?'good':'warn');
+    v.innerHTML=(linePass?'&#10003; Line/number criterion met.':'&#9888; Line/number criterion not met.')
+        +(monoOK?' All blocks monotonic.':' <strong>Non-monotonic block(s) — ordering broke down.</strong>');
+    $('calibNote').innerHTML=
+        `<strong>Bias-cancelled exponents (both directions):</strong> line/number <strong>${ELN.toFixed(2)}</strong> (bias ${(100*(rbLN-1)).toFixed(0)}%), `+
+        `area/number <strong>${EAN.toFixed(2)}</strong> (bias ${(100*(rbAN-1)).toFixed(0)}%).<br>`+
+        `<strong>Recovered area exponent: ${areaExp.toFixed(2)}</strong>${areaCI} — expected ≈0.70. ${strat}. `+
+        `<em>Note: the area block spans 50:1 against line's 100:1; by Teghtsoonian's range rule the compressed range inflates the exponent, so a high value has two live explanations.</em> `+
+        `Landmarks: <strong>0.50</strong> = judging the side, <strong>0.70</strong> = judging area, <strong>1.00</strong> = linear in physical area. `+
+        `This is the falsifiable test a unit-exponent pair cannot provide.<br>`+
+        (hasL?`<em>Loudness: both blocks are productions, so its bias cannot be cancelled. Transitivity — predicted ${predF.toFixed(2)} vs observed ${fF.slope.toFixed(2)} (ratio ${trans.toFixed(2)}).</em>`:'<em>Loudness blocks were not run.</em>')
+        +(censD>0?`<br><strong style="color:#c0392b;">&#9888; ${censD} area trial(s) hit the edge of the canvas and were excluded (censored).</strong>`:'')
+        +((cens.E+cens.F)>0?`<br><strong style="color:#c0392b;">&#9888; ${cens.E+cens.F} loudness trial(s) hit the ceiling or floor and were excluded from the fits (censored).</strong>`:'');
+    hide('blockF');show('calibDone');
+}
+
+// ================= ITEMS: CATEGORY RATING =================
+let likVals=Array(NITEMS).fill(null), opDirs=Array(NITEMS).fill(null);
+let vasVals=Array(NITEMS).fill(null);
+function buildTipi(){
+    // every box carries its own verbal anchor, column-aligned (the original ITEMS header)
+    let h='<div class="hd"></div>'+LIKERT_LBL.map((l,j)=>`<div class="hd">${l}<br><strong>${j+1}</strong></div>`).join('');
+    ITEMS.forEach((it,i)=>{h+=`<div class="itm rowtop">${it.n}. ${it.text}</div>`+
+        [1,2,3,4,5].map(v=>`<div class="cell rowtop"><button data-i="${i}" data-v="${v}" title="${LIKERT_LBL[v-1]}">${v}</button></div>`).join('');});
+    $('tipiRows').innerHTML=h;
+    $('tipiRows').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+        const i=+b.dataset.i;likVals[i]=+b.dataset.v;
+        $('tipiRows').querySelectorAll(`button[data-i="${i}"]`).forEach(x=>x.classList.remove('sel'));
+        b.classList.add('sel');
+        const n=likVals.filter(v=>v!=null).length;
+        $('tipiNext').disabled=n<NITEMS;$('tipiHint').textContent=n<NITEMS?`${NITEMS-n} left`:'';}));}
+function buildVas(){
+    let h=`<div class="hd"></div><div class="hd vasends"><span>${LIKERT_LBL[0]}</span><span>${LIKERT_LBL[2]}</span><span>${LIKERT_LBL[4]}</span></div>`;
+    ITEMS.forEach((it,i)=>{
+        // The start position is RANDOMISED. A slider parked at the midpoint both
+        // invites anchoring there and sits exactly on the value the compression
+        // measure reads as "no departure", so a default midpoint would
+        // manufacture the very responses the analysis then discards.
+        const st=Math.round(VAS_MIN+Math.random()*(VAS_MAX-VAS_MIN));
+        h+=`<div class="itm rowtop">${it.n}. ${it.text}</div>`+
+           `<div class="cell rowtop"><input type="range" min="${VAS_MIN}" max="${VAS_MAX}" step="0.1" value="${st}" data-i="${i}" aria-label="${it.text}"></div>`;});
+    $('vasRows').innerHTML=h;
+    // No numeric readout and no tick marks: showing a number turns this into a
+    // number-estimation task, which is a different modality altogether.
+    // An item counts as answered only once the slider is actually MOVED, so a
+    // randomised start that happens to be left alone is not silently recorded.
+    $('vasRows').querySelectorAll('input').forEach(s=>s.addEventListener('input',()=>{
+        const i=+s.dataset.i;vasVals[i]=+s.value;s.classList.add('touched');
+        const n=vasVals.filter(v=>v!=null).length;
+        $('vasNext').disabled=n<NITEMS;$('vasHint').textContent=n<NITEMS?`${NITEMS-n} left`:'';}));}
+function buildDirs(){const D=[['disagree','Disagree'],['neutral','Neither'],['agree','Agree']];
+    let h='<div class="hd"></div>'+D.map(([,l])=>`<div class="hd">${l}</div>`).join('');
+    ITEMS.forEach((it,i)=>{h+=`<div class="itm rowtop">${it.n}. ${it.text}</div>`+
+        D.map(([d,l])=>`<div class="cell rowtop"><button data-i="${i}" data-d="${d}">${l}</button></div>`).join('');});
+    $('dirRows').innerHTML=h;
+    $('dirRows').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+        const i=+b.dataset.i;opDirs[i]=b.dataset.d;
+        $('dirRows').querySelectorAll(`button[data-i="${i}"]`).forEach(x=>x.classList.remove('sel'));
+        b.classList.add('sel');
+        const n=opDirs.filter(v=>v!=null).length;
+        $('dirNext').disabled=n<NITEMS;$('dirHint').textContent=n<NITEMS?`${NITEMS-n} left`:'';}));}
+buildTipi();buildVas();buildDirs();
+// The category scale and the VAS ask the SAME question with the SAME anchors, so
+// whichever runs second is open to simple recall of the first. The order is drawn
+// per session and exported, so the carryover can be measured rather than assumed
+// away. Both sit on the same side of the magnitude task, so format is never
+// confounded with position relative to it.
+let ratingQ=[],ratingIdx=0,ratingsDone=false,ratingOrder=null;
+function initRatings(){
+    ratingQ=useVAS?shuffle(['likert','vas']):['likert'];
+    ratingOrder=ratingQ.join(' then ');ratingIdx=0;}
+function showRating(){markScreen();show(ratingQ[ratingIdx]==='vas'?'vasPhase':'tipiPhase');}
+function ratingDone(){
+    hide('tipiPhase');hide('vasPhase');ratingIdx++;
+    if(ratingIdx<ratingQ.length){showRating();return;}
+    ratingsDone=true;
+    if(likertFirst)show('opDirection');else toFinish();}
+$('tipiNext').addEventListener('click',ratingDone);
+$('vasNext').addEventListener('click',ratingDone);
+
+// ================= ITEMS: MAGNITUDE =================
+let opQ=[],opMi=0,opStep='ref',opSeq=[],opIi=0;
+// Lodge's schedule: item, then "Reference Line", then "Response Line" — same page, fresh
+// reference for every question. refArr holds one reference per item per modality.
+const refV={line:null,number:null,area:null,loud:null};
+const refArr={line:Array(NITEMS).fill(null),number:Array(NITEMS).fill(null),area:Array(NITEMS).fill(null),loud:Array(NITEMS).fill(null)};
+const refMmArr=Array(NITEMS).fill(null);
+const respMeta={line:Array(NITEMS).fill(null),number:Array(NITEMS).fill(null),area:Array(NITEMS).fill(null),loud:Array(NITEMS).fill(null)};
+// Inventory responses only ever go ABOVE the reference, so headroom is one-sided.
+// Observed maxima across pilots reached 16.9x (line), so references are sized for 20x.
+// The NUMBER reference matters too: pilots given 50 treated it as a percentage and
+// collapsed into 0-100; pilots who chose 5 or 10 used genuine ratios.
+const INV_HEADROOM=20;
+const GIVEN_REF={line:Math.round(MAX_HALF*2/INV_HEADROOM),           // 81px  -> 20x
+                 number:10,
+                 area:Math.round(AREA_MAXS/Math.sqrt(areaHeadroomFor(INV_HEADROOM))), // 66x AREA = 20x subjective
+                 loud:null};
+function givenRef(m){return m==='loud'?refCalGain:GIVEN_REF[m];}
+function curRef(m){return fixedOpRef?givenRef(m):(perItemRef?refArr[m][curItem()]:refV[m]);}
+
+// ---- minimum dwell on reference screens ----
+const DWELL_S=3;
+let dwellActive=false,dwellTimer=null,dwellBtn=null,dwellLbl='',dwellRecheck=null;
+function endDwell(){clearInterval(dwellTimer);dwellTimer=null;dwellActive=false;
+    if(dwellBtn){dwellBtn.textContent=dwellLbl;}
+    if(dwellRecheck)dwellRecheck();}
+function beginDwell(btn,label,recheck){
+    clearInterval(dwellTimer);dwellBtn=btn;dwellLbl=label;dwellRecheck=recheck;
+    if(!useDwell){dwellActive=false;btn.textContent=label;if(recheck)recheck();return;}
+    dwellActive=true;let t=DWELL_S;
+    btn.textContent=`${label} (${t})`;btn.disabled=true;
+    dwellTimer=setInterval(()=>{t--;
+        if(t>0){btn.textContent=`${label} (${t})`;btn.disabled=true;}
+        else endDwell();},1000);}
+const respV={line:Array(NITEMS).fill(null),number:Array(NITEMS).fill(null),area:Array(NITEMS).fill(null),loud:Array(NITEMS).fill(null)};
+const loudCapped=Array(NITEMS).fill(false);let opLoudRefCapped=null;
+const lineCapped=Array(NITEMS).fill(false);
+let opLineRefMm=null;const opLineRespMm=Array(NITEMS).fill(null);
+
+// ---- opinion controls (bindings, restored) ----
+const opLineSvg=$('opLineSvg'),opLineConfirm=$('opLineConfirm');let opLineLen=0;
+bindDraw(opLineSvg,()=>opStep==='ref'?$('opLineRef'):$('opLineResp'),l=>{opLineLen=l;opLineConfirm.disabled=l<4||dwellActive;
+    if(opStep==='ref'){const bd=bandOpLine(),msg=bandMsg(l,bd,'reference line',
+        `your answers can run to ${INV_HEADROOM}x the reference and would go off the screen.`,
+        `it is too short to judge against.`);
+        $('opLineRefWarn').innerHTML=msg||'';$('opLineRefWarn').style.display=msg?'block':'none';}
+    else $('opLineRefWarn').style.display='none';
+    $('opLineCapWarn').style.display=(opStep!=='ref'&&nearLineCap(l))?'block':'none';});
+const opAreaSvg=$('opAreaSvg'),opAreaConfirm=$('opAreaConfirm');let opAreaSide=0;
+bindSquare(opAreaSvg,()=>opStep==='ref'?$('opAreaRef'):$('opAreaResp'),s=>{opAreaSide=s;opAreaConfirm.disabled=s<8||dwellActive;
+    if(opStep==='ref'){const bd=bandOpArea(),msg=bandMsg(s,bd,'reference square',
+        `your answers can cover ${INV_HEADROOM}x this area and would not fit.`,
+        `it is too small to judge against.`);
+        $('opAreaRefWarn').innerHTML=msg||'';$('opAreaRefWarn').style.display=msg?'block':'none';}
+    else $('opAreaRefWarn').style.display='none';
+    $('opAreaCapWarn').style.display=(opStep==='resp'&&nearAreaCap(s))?'block':'none';});
+const opNumInput=$('opNumInput'),opNumConfirm=$('opNumConfirm');
+opNumInput.addEventListener('input',()=>{const v=parseFloat(opNumInput.value);
+    opNumConfirm.disabled=!(v>0)||dwellActive;
+    // strength is a magnitude ABOVE the neutral reference; below it is undefined here
+    const bad=opStep==='resp'&&v>0&&v<=curRef('number');
+    $('opNumBelowWarn').style.display=bad?'block':'none';
+    $('opNumBelowWarn').innerHTML=bad?`You are expressing <em>how strongly</em> you feel, so your number must be <strong>larger than your reference of ${curRef('number')}</strong>. A number below the reference would mean less than neutral, which this task cannot record.`:'';});
+let opLoudGain=0.02;
+function opLoudAdj(k,t){ensureCtx();opLoudGain=Math.min(Math.max(opLoudGain*stepMult(k,t),refCalGain/60),ceilingGain);
+    if(opABst.v==='ref'){opABst.v='mine';$('opLoudAB').innerHTML='&#8646; Switch to my reference';}
+    if(playing&&curBtn===$('opLoudPlay')){setGain(opLoudGain);setStatus('opLoudStatus','mine');}
+    $('opRefLoudWarn').style.display=(opStep==='ref'&&opLoudGain>ceilingGain/8)?'block':'none';
+    $('opCapWarn').style.display=nearCap(opLoudGain)?'block':'none';}
+bindHold($('opLoudLouder'),t=>opLoudAdj(1,t));bindHold($('opLoudSofter'),t=>opLoudAdj(-1,t));
+$('opLoudPlay').addEventListener('click',()=>{toggleSound(opLoudGain,$('opLoudPlay'),'&#9654; Play my sound');
+    opABst.v='mine';$('opLoudAB').innerHTML='&#8646; Switch to my reference';
+    setStatus('opLoudStatus',(playing&&curBtn===$('opLoudPlay'))?'mine':'off');});
+bindABToggle($('opLoudAB'),()=>curRef('loud')||refCalGain,()=>opLoudGain,'opLoudStatus',$('opLoudPlay'),'&#9654; Play my sound',opABst,'&#8646; Switch to my sound','&#8646; Switch to my reference');
+$('toOpinion').addEventListener('click',()=>{hide('calibDone');
+    if(likertFirst){initRatings();showRating();}else show('opDirection');});
+$('dirNext').addEventListener('click',()=>{hide('opDirection');
+    opQ=['line','number'].concat(opArea?['area']:[],(opLoud&&useAudio)?['loud']:[]);
+    if(shuffleMod)opQ=shuffle(opQ);
+    opMi=0;show('opModality');startModality();});
+// Agree-items and disagree-items are blocked, with an explicit hand-over screen between
+// them: flipping between "how strongly I agree" and "how strongly I disagree" on every
+// trial is a needless task-set switch. Which set comes first is counterbalanced.
+let opGroups=[],opGi=0,dirOrder=null;
+function startModality(){
+    // with a given reference there is no reference step: prefill every item's reference
+    if(fixedOpRef)opQ.forEach(m=>refArr[m].fill(givenRef(m)));
+    const pick=d=>shuffle(ITEMS.map((t,i)=>i).filter(i=>opDirs[i]===d));
+    // dirOrder is drawn once per session and reused for every modality, so the agree/disagree
+    // sequence is identical throughout; counterbalancing happens ACROSS participants
+    if(!dirOrder)dirOrder=shuffle(['agree','disagree']);
+    opGroups=dirOrder.map(d=>[d,pick(d)]).filter(g=>g[1].length);
+    opGi=0;
+    if(!opGroups.length){nextModality();return;}
+    enterGroup();}
+function enterGroup(){
+    opSeq=opGroups[opGi][1];opIi=0;opStep=fixedOpRef?'resp':'ref';
+    const dir=opGroups[opGi][0],first=opGi===0,n=opSeq.length;
+    const mn={line:'line length',number:'number',area:'area',loud:'loudness'}[opQ[opMi]];
+    $('groupIntro').className='phase neutral';
+    $('groupTag').className='stage-tag '+(dir==='agree'?'agreeing':'disagreeing');
+    $('groupTag').textContent=dir==='agree'?'STATEMENTS YOU AGREE WITH':'STATEMENTS YOU DISAGREE WITH';
+    $('groupH2').textContent=dir==='agree'?'Now: how strongly you AGREE':'Now: how strongly you DISAGREE';
+    // Two different switches can happen here and they were previously indistinguishable:
+    // moving between the agree and disagree blocks, and moving to a WHOLE NEW WAY of
+    // responding. Only the first was announced, so a change of modality arrived
+    // unmarked at the start of a group -- pilot respondents carried the previous
+    // task's strategy straight into the new one.
+    const newModality=opGi===0&&opMi>0;
+    $('groupInstr').innerHTML=(newModality
+        ?`<strong>A new way of answering.</strong> The same statements come back, but this time you answer with <strong>${mn}</strong> instead of ${
+            {line:'line length',number:'numbers',area:'area',loud:'loudness'}[opQ[opMi-1]]}. `
+        :first?'':'<strong>You are switching over now.</strong> ')+
+        // Everything else that used to be here -- how the reference works, that the
+        // answer goes above it, how to judge by eye -- is on the first item of the
+        // modality, where it is read once instead of at every block boundary.
+        `The next ${n} statement${n===1?' is one':'s are ones'} you said you <strong>${dir}</strong> with.`;
+    hide('opModality');show('groupIntro');}
+$('groupNext').addEventListener('click',()=>{hide('groupIntro');
+    // The border says which MODALITY you are answering in, the same as it does in
+    // calibration. Number keeps the green that used to mean "inventory".
+    $('opModality').className='phase '+({line:'line',number:'op',area:'area',loud:'loud'}[opQ[opMi]]||'neutral');
+    show('opModality');renderOp();});
+function startMagnitude(){show('opDirection');}
+function curItem(){return opSeq[opIi];}
+function nextModality(){opMi++;
+    if(opMi<opQ.length){startModality();}
+    else{stopSound();hide('opModality');
+        if(ratingsDone)toFinish();else{initRatings();showRating();}}}
+function renderOp(){markScreen();const m=opQ[opMi],isRef=opStep==='ref';
+    const it=isRef?null:ITEMS[curItem()], dir=isRef?null:opDirs[curItem()];
+    const mn={line:'LINE LENGTH',number:'NUMBER',area:'AREA',loud:'LOUDNESS'}[m];
+    $('opProg').innerHTML=isRef
+        ? `${mn} &mdash; <span class="anchorbadge">REFERENCE</span>`+(perItemRef?` &mdash; ITEM ${opIi+1} OF ${opSeq.length}`:'')+` (modality ${opMi+1} of ${opQ.length})`
+        : `${mn} &mdash; <span class="anchorbadge" style="background:#159e79;">RESPONSE</span> &mdash; ITEM ${opIi+1} OF ${opSeq.length} (modality ${opMi+1} of ${opQ.length})`;
+    const itRef=perItemRef?ITEMS[curItem()]:null, dirRef=perItemRef?opDirs[curItem()]:null;
+    $('opModStatement').textContent=isRef
+        ? (perItemRef?('I am someone who\u2026 \u201C'+itRef.text+'\u201D'):'\u201CNeither agree nor disagree\u201D')
+        : ('I am someone who\u2026 \u201C'+it.text+'\u201D');
+    $('opDirRemind').innerHTML=isRef
+        ? (perItemRef?`First mark <strong>neutral</strong> for this statement. It stays in view while you answer.`
+                     :'This single reference will be used for every statement in this block.')
+        : (opGi===0&&opIi===0
+            ? `You said you <strong>${dir}</strong> with this. The reference stands for <strong>neutral</strong>; show how strongly you ${dir} compared with it.`
+            : '');
+    const opDir=isRef?null:dir;
+    // The framing belongs on the FIRST item of a modality, not on all fifteen.
+    // "the reference stands for the neutral middle" was rendering 45 times a session.
+    const firstOfModality=opGi===0&&opIi===0;
+    ['opLinePane','opNumPane','opAreaPane','opLoudPane'].forEach(i=>$(i).style.display='none');
+    if(m==='line'){$('opLinePane').style.display='block';
+        opLineLen=0;opLineConfirm.disabled=true;$('opLineRefWarn').style.display='none';$('opLineCapWarn').style.display='none';
+        if(isRef)paintLineBand(opLineSvg,bandOpLine(),44); else hideBand(opLineSvg);
+        if(isRef)hideTarget(opLineSvg); else markTarget(opLineSvg,'line',104);   // 104 = opLineResp's y
+        if(isRef)setLine($('opLineRef'),0);
+        setLine($('opLineResp'),0);
+        $('opLineConfirm').textContent=isRef?'Set reference':'Confirm';
+        $('opLineH3').textContent=isRef?'1. Draw your reference line':(fixedOpRef?`How strongly do you ${opDir}?`:`2. Now show how strongly you ${opDir}`);
+        $('opLineInstr').textContent=isRef?'Draw a line standing for neutral for this statement. Keep it smallish: your answer can be many times longer and needs room.'
+            :(firstOfModality?`The more strongly you ${opDir}, the longer your line compared with the reference line above it.`
+                             :'Longer means stronger.');
+        $('opLineInstr').innerHTML=$('opLineInstr').textContent+
+            (isRef?' '+READY_CONTINUE('Set reference'):' '+(firstOfModality?APPARENT_MAKE_LINE:SHORT_LINE));
+        $('opLineRef').setAttribute('visibility','visible');
+        $('opLineRefLbl').setAttribute('visibility','visible');
+        $('opLineResp').setAttribute('visibility',isRef?'hidden':'visible');
+        $('opLineRespLbl').setAttribute('visibility',isRef?'hidden':'visible');
+        if(!isRef)$('opLineRespLbl').textContent='Your '+(DIRNOUN[dir]||'response');
+        if(!isRef)setLine($('opLineRef'),curRef('line'));}
+    if(m==='area'){$('opAreaPane').style.display='block';
+        opAreaSide=0;opAreaConfirm.disabled=true;$('opAreaRefWarn').style.display='none';
+        if(isRef)paintAreaBand(opAreaSvg,bandOpArea()); else hideBand(opAreaSvg);
+        markTarget(opAreaSvg,'area');
+        if(isRef)setSquare($('opAreaRef'),0);
+        setSquare($('opAreaResp'),0);
+        $('opAreaConfirm').textContent=isRef?'Set reference':'Confirm';
+        $('opAreaH3').textContent=isRef?'1. Make your reference square':(fixedOpRef?`How strongly do you ${opDir}?`:`2. Now show how strongly you ${opDir}`);
+        $('opAreaInstr').textContent=isRef?'Make a square whose AREA stands for neutral for this statement. Keep it smallish; leave room well above it.'
+            :(firstOfModality?`The more strongly you ${opDir}, the more AREA your square covers compared with the outlined reference — twice as strongly means twice the space covered.`
+                             :'More area means stronger.');
+        $('opAreaInstr').innerHTML=$('opAreaInstr').textContent+
+            (isRef?' '+READY_CONTINUE('Set reference'):' '+(firstOfModality?APPARENT_MAKE_AREA:SHORT_AREA));
+        $('opAreaCapWarn').style.display='none';
+        $('opAreaRef').setAttribute('visibility','visible');
+        $('opAreaRefLbl').setAttribute('visibility','visible');
+        $('opAreaResp').setAttribute('visibility',isRef?'hidden':'visible');
+        if(!isRef)setSquare($('opAreaRef'),curRef('area'));}
+    if(m==='number'){$('opNumPane').style.display='block';
+        opNumInput.disabled=false;opNumInput.value='';opNumConfirm.disabled=true;$('opNumBelowWarn').style.display='none';
+        $('opNumRefShow').value=isRef?'':curRef('number');
+        $('opNumRefRow').style.display=isRef?'none':'flex';
+        $('opNumRespLbl').textContent=isRef?'Reference — neutral:':`How strongly you ${opDir}:`;
+        $('opNumConfirm').textContent=isRef?'Set reference':'Confirm';
+        $('opNumH3').textContent=isRef?'1. Give your reference number':(fixedOpRef?`How strongly do you ${opDir}?`:`2. Now show how strongly you ${opDir}`);
+        $('opNumInstr').textContent=isRef?'Give a number standing for neutral for this statement.'
+            :(firstOfModality?`The more strongly you ${opDir}, the bigger your number compared with your reference of ${curRef('number')}.`:'');}
+    if(isRef){
+        const b=m==='line'?opLineConfirm:m==='area'?opAreaConfirm:m==='number'?opNumConfirm:$('opLoudConfirm');
+        beginDwell(b,'Set reference',()=>{
+            if(m==='line')b.disabled=opLineLen<4;
+            else if(m==='area')b.disabled=opAreaSide<8;
+            else if(m==='number')b.disabled=!(parseFloat(opNumInput.value)>0);
+            else b.disabled=false;});
+    }else{dwellActive=false;clearInterval(dwellTimer);}
+    if(m==='loud'){$('opLoudPane').style.display='block';
+        $('opLoudAB').style.display=isRef?'none':'inline-block';
+        opLoudGain=isRef?randStart(refCalGain):altStart(opAlt);
+        $('opRefLoudWarn').style.display='none';$('opCapWarn').style.display='none';
+        if(!isRef)playSeq($('opLoudPlay'),'&#9654; Play my sound','opLoudStatus',curRef('loud')||refCalGain,()=>opLoudGain,opABst,$('opLoudAB'),'&#8646; Switch to my reference');
+        else{stopSound();$('opLoudPlay').innerHTML='&#9654; Play my sound';opABst.v='mine';}
+        $('opLoudConfirm').textContent=isRef?'Set reference':'Confirm';
+        $('opLoudH3').textContent=isRef?'1. Set your reference sound':`2. Now show how strongly you ${opDir}`;
+        $('opLoudInstr').textContent=isRef?'Set a loudness standing for the middle position, in between Agree and Disagree. Leave plenty of room to go louder.'
+            :`The more strongly you ${opDir}, the louder your sound compared with your reference. Use the orange button to switch between them.`;}
+    // Here rather than in show(): the modality panes are switched on by display
+    // AFTER show('opModality') runs, so at that point the canvas is still zero-width
+    // and its labels get skipped.
+    sizeLabels();}
+function advance(v){const m=opQ[opMi];
+    if(opStep==='ref'){
+        if(perItemRef)refArr[m][curItem()]=v; else {refV[m]=v;refArr[m].fill(v);}
+        opStep='resp';renderOp();}
+    else{respV[m][curItem()]=v;respMeta[m][curItem()]=stamp();opIi++;
+        if(opIi>=opSeq.length){
+            opGi++;
+            if(opGi<opGroups.length){enterGroup();return;}
+            nextModality();return;}
+        opStep=(fixedOpRef||!perItemRef)?'resp':'ref';renderOp();}}
+opLineConfirm.addEventListener('click',()=>{
+    // measure NOW: the pane is hidden by the time finish() runs, and a hidden SVG has zero width
+    const mm=vbToMm(opLineSvg,opLineLen);
+    if(opStep==='ref'){opLineRefMm=mm;refMmArr[curItem()]=mm;}
+    else{opLineRespMm[curItem()]=mm;lineCapped[curItem()]=nearLineCap(opLineLen);}
+    advance(opLineLen);});
+opAreaConfirm.addEventListener('click',()=>advance(opAreaSide));
+opNumConfirm.addEventListener('click',()=>advance(parseFloat(opNumInput.value)));
+$('opLoudConfirm').addEventListener('click',()=>{
+    if(opStep==='ref')opLoudRefCapped=nearCap(opLoudGain);else loudCapped[curItem()]=nearCap(opLoudGain);
+    advance(opLoudGain);});
+
+// ================= CONSISTENCY CHECK =================
+// Direction and the category rating are collected in separate phases with nothing linking
+// them. Where they contradict, ask rather than silently averaging over the conflict.
+const DIRWORD={agree:'agree',disagree:'disagree',neutral:'neutral'};
+// Noun form, for the label beside the response line. "Your agreement" names what
+// the length represents; "Response line" only named the widget.
+const DIRNOUN={agree:'agreement',disagree:'disagreement',neutral:'response'};
+let recon=[];
+function findContradictions(){
+    return ITEMS.map((it,i)=>({i,it,dir:opDirs[i],lik:likVals[i]}))
+        .filter(r=>r.dir!=null&&r.lik!=null&&!(
+            (r.dir==='agree'&&r.lik>LIK_MID)||(r.dir==='disagree'&&r.lik<LIK_MID)||(r.dir==='neutral'&&r.lik===LIK_MID)));}
+function buildRecon(list){
+    recon=list.map(r=>({n:r.it.n,text:r.it.text,direction:r.dir,likert:r.lik,resolved:null}));
+    $('reconRows').innerHTML=list.map((r,k)=>
+        `<div class="tipirow" style="display:block;padding:14px 0;">
+           <div class="reconitem"><strong>${r.it.n}. I am someone who ${r.it.text.charAt(0).toLowerCase()+r.it.text.slice(1)}</strong></div>
+           <div class="instruction" style="margin:0 0 8px;">You first said you <strong>${DIRWORD[r.dir]}</strong>,
+             but then rated it <strong>${r.lik} &mdash; ${LIKERT_LBL[r.lik-1]}</strong>. Which did you mean?</div>
+           <div class="opts" style="display:flex;gap:8px;flex-wrap:wrap;">
+             <button data-k="${k}" data-v="direction" style="background:#efefef;color:#444;">I ${DIRWORD[r.dir]}</button>
+             <button data-k="${k}" data-v="category" style="background:#efefef;color:#444;">${LIKERT_LBL[r.lik-1]}</button>
+             <button data-k="${k}" data-v="unsure" style="background:#efefef;color:#444;">Not sure</button>
+           </div></div>`).join('');
+    $('reconRows').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+        const k=+b.dataset.k;recon[k].resolved=b.dataset.v;
+        b.parentNode.querySelectorAll('button').forEach(x=>{x.style.background='#efefef';x.style.color='#444';});
+        b.style.background='#7a4fb5';b.style.color='#fff';
+        const left=recon.filter(r=>r.resolved==null).length;
+        $('reconNext').disabled=left>0;$('reconHint').textContent=left?`${left} left`:'';}));}
+$('reconNext').addEventListener('click',()=>{hide('reconcilePhase');finish();});
+function toFinish(){
+    const list=findContradictions();
+    // The contradictions are RECORDED either way. They are analysis data -- the
+    // export's contradiction count is recon.length -- and the toggle only decides
+    // whether the respondent is asked to settle them. Building the list
+    // unconditionally is what stops "don't ask" from exporting "there were none".
+    buildRecon(list);
+    if(!useReconcile||!list.length){finish();return;}
+    markScreen();show('reconcilePhase');}
+
+// ================= SCORING =================
+let payload=null;
+function finish(){
+    const kOf={line:()=>S.kLine,number:()=>1,area:()=>S.kArea,loud:()=>S.kLoud};
+    const items=ITEMS.map((it,i)=>{
+        const rec=recon.find(r=>r.n===it.n)||null;
+        const dir=opDirs[i], dsign=dir==='agree'?1:dir==='disagree'?-1:0;
+        const ratios={},ne={};
+        opQ.forEach(m=>{
+            if(dsign===0){ratios[m]=1;ne[m]=1;return;}
+            const rf=refArr[m][i];
+            const r=m==='area'?Math.pow(respV[m][i]/rf,2):(respV[m][i]/rf);
+            ratios[m]=+r.toFixed(4);ne[m]=+Math.pow(r,kOf[m]()).toFixed(4);});
+        const lodgePair=['line','number'].filter(m=>opQ.includes(m)).map(m=>ratios[m]);
+        const lodge=+geomean(lodgePair).toFixed(4);
+        const pooled=+geomean(opQ.map(m=>ne[m])).toFixed(4);
+        // trait sign: direction, flipped for reverse-keyed items
+        const tsign=dsign*(it.rev?-1:1);
+        const lik=likVals[i], likKeyed=lik==null?null:(it.rev?(LIK_MIN+LIK_MAX)-lik:lik);
+        // Same keying and same departure-from-midpoint as the category scale, so
+        // the two are directly comparable and differ only in resolution.
+        const vas=useVAS?vasVals[i]:null, vasKeyed=vas==null?null:(it.rev?(VAS_MIN+VAS_MAX)-vas:vas);
+        return {n:it.n,text:it.text,dim:it.dim,reverse:it.rev,direction:dir,
+                likert:lik,likertKeyed:likKeyed,likertDeparture:lik==null?null:Math.abs(lik-LIK_MID),
+                vas,vasKeyed,vasDeparture:vas==null?null:+Math.abs(vas-VAS_MID).toFixed(2),
+                reference:Object.fromEntries(opQ.map(m=>[m,refArr[m][i]==null?null:+refArr[m][i].toFixed(m==='loud'?5:1)])),
+                referenceLineMm:refMmArr[i],
+                ratios,numberEquiv:ne,lodgeScaleValue_LPNE:lodge,pooledScaleValue:pooled,
+                magnitude_lodge:+(tsign*lodge).toFixed(4),magnitude_pooled:+(tsign*pooled).toFixed(4),
+                timing:Object.fromEntries(opQ.map(m=>[m,respMeta[m][i]])),
+                inconsistentWithCategory:!!(rec&&rec.n===it.n),
+                consistencyResolution:rec?rec.resolved:null,
+                lineMm:opLineRespMm[i],loudnessAtCeiling:loudCapped[i],lineAtCanvasEdge:lineCapped[i],
+                areaAtCanvasEdge:opQ.includes('area')&&respV.area[i]!=null&&respV.area[i]>=AREA_MAXS-1};});
+    // dimension scores: mean of the two keyed items
+    const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
+    const dims=DIMS.map(d=>{const grp=items.filter(x=>x.dim===d);   // three items per domain in the BFI-2-XS
+        const lk=grp.map(x=>x.likertKeyed), mg=grp.map(x=>x.magnitude_lodge), mp=grp.map(x=>x.magnitude_pooled);
+        const vs=grp.map(x=>x.vasKeyed);
+        return {dimension:d,items:grp.map(x=>x.n),
+                likert:lk.some(v=>v==null)?null:+mean(lk).toFixed(2),
+                likertCentred:lk.some(v=>v==null)?null:+(mean(lk)-LIK_MID).toFixed(2),
+                vas:vs.some(v=>v==null)?null:+mean(vs).toFixed(2),
+                vasCentred:vs.some(v=>v==null)?null:+(mean(vs)-VAS_MID).toFixed(2),
+                magnitude_lodge:+mean(mg).toFixed(3),
+                magnitude_pooled:+mean(mp).toFixed(3)};});
+    // Lodge's core claim: category ratings are a COMPRESSED power function of magnitude.
+    // Fit log|likert-4| on log(magnitude ratio) across items; exponent < 1 = compression.
+    // A censored response carries no usable ratio information -- at the wall, 20x and 50x
+    // are indistinguishable -- so it cannot inform a fit about magnitude.
+    const usable=items.filter(x=>x.direction!=='neutral'&&x.likertDeparture>0&&x.lodgeScaleValue_LPNE>0
+        &&!x.lineAtCanvasEdge&&!x.areaAtCanvasEdge&&!x.loudnessAtCeiling);
+    const pts=usable.map(x=>({x:Math.log10(x.lodgeScaleValue_LPNE),y:Math.log10(x.likertDeparture)}));
+    const cmp=pts.length>=3?ols(pts):null;
+    // the uncorrected fit uses raw line+number ratios; correction is a power transform, so the
+    // corrected compression exponent differs by the correction exponent. Report both.
+    const ptsC=usable.filter(x=>x.pooledScaleValue>0).map(x=>({x:Math.log10(x.pooledScaleValue),y:Math.log10(x.likertDeparture)}));
+    const cmpC=ptsC.length>=3?ols(ptsC):null;
+    // THE FALSIFIABLE FIT. Same regression, but against a response whose range can
+    // actually represent the magnitudes: VAS departure spans ~50:1 where the
+    // 5-point scale spans 2:1. On the category scale an exponent of 1.0 cannot be
+    // returned at all, so "the interval excludes 1.0" is guaranteed by the format;
+    // here an uncompressed respondent is representable and the test can fail.
+    const usableV=items.filter(x=>x.direction!=='neutral'&&x.vasDeparture>0&&x.lodgeScaleValue_LPNE>0
+        &&!x.lineAtCanvasEdge&&!x.areaAtCanvasEdge&&!x.loudnessAtCeiling);
+    const ptsV=usableV.map(x=>({x:Math.log10(x.lodgeScaleValue_LPNE),y:Math.log10(x.vasDeparture)}));
+    const cmpV=ptsV.length>=3?ols(ptsV):null;
+    // DISCRETIZATION, isolated. The same question asked with and without fixed
+    // steps, so anything other than a slope of 1 here is binning alone -- the
+    // compression common to both formats divides out.
+    const ptsD=items.filter(x=>x.direction!=='neutral'&&x.vasDeparture>0&&x.likertDeparture>0)
+        .map(x=>({x:Math.log10(x.vasDeparture),y:Math.log10(x.likertDeparture)}));
+    const cmpD=ptsD.length>=3?ols(ptsD):null;
+    const distinctV=new Set(items.map(x=>x.vas).filter(v=>v!=null)).size;
+    const distinctL=new Set(items.map(x=>x.likert)).size;
+    const distinctM=new Set(items.map(x=>x.lodgeScaleValue_LPNE)).size;
+
+    payload={instrument:'magnitude_scaling_BFI2XS',trait:TRAIT,timestamp:new Date().toISOString(),
+        // source records HOW the id arrived, because "typed" and "from the link" fail
+        // in different ways and a session with no id at all must be identifiable.
+        participant:{id:pid||null,source:pid?pidSource:'none',returnUrl,
+            // Whether this session was meant to post itself. A file that arrives by
+            // hand from a run that should have posted is worth noticing.
+            delivery:DATA_ENDPOINT?'endpoint':'manual'},
+        soundStimulus:(usePink?'broadband pink noise':'broadband white noise')+' — unfiltered, diotic (Lodge et al. 1976 used broad band noise via TDH-39)',
+        protocol:{modulus:REF_NUMBER,calibrationMetric:LODGE_NUMS,lineRange:'100:1',areaRange:'50:1',loudnessRange:'~64:1 pressure (16:1 stimulus range)',
+            modulusMode:fixedMod?'assigned (Lodge default: calibration reference = 50; opinion references respondent-produced per 1981 direct scaling)':'free (Lodge 1981 footnote-6 variant)',
+            opinionModalities:opQ.slice(),administrationOrder:likertFirst?'category scale first, then magnitude':'magnitude first, then category scale',
+            audioBlocksRun:useAudio,referenceDwellSeconds:useDwell?DWELL_S:0,
+            modalityOrderRandomised:shuffleMod,inventoryHeadroom:INV_HEADROOM,
+            areaCanvas:`${AREA_VBW}x${AREA_VBH} viewBox, square capped at ${AREA_MAXS} (${(100*AREA_MAXS/AREA_VBH).toFixed(0)}% of height)`,
+            inventoryReference:fixedOpRef?`given, sized for ${INV_HEADROOM}x SUBJECTIVE headroom (line ${GIVEN_REF.line}px = ${INV_HEADROOM}x physical; square ${GIVEN_REF.area}px side = ${areaHeadroomFor(INV_HEADROOM).toFixed(0)}x physical area, since perceived area grows as A^${AREA_EXP_NOMINAL}; number ${GIVEN_REF.number})`:'respondent-produced',
+            areaCanvasMaxSide:AREA_MAXS,
+            sessionDurationMs:Date.now()-T0,directionBlockOrder:dirOrder?dirOrder.join(' then '):null,
+            perItemReference:perItemRef,midBlockReferenceReminder:halves&&doubleAB,
+            ratingFormats:useVAS?'5-point category scale + continuous bipolar VAS':'5-point category scale only',
+            ratingOrder,vasRange:useVAS?[VAS_MIN,VAS_MAX]:null,
+            vasStartRandomised:useVAS,
+            itemOrderShuffledPerModality:true,
+            randomisedStartingPoint:true,abComparison:'toggle switch; each production trial opens playing the reference until the respondent switches or adjusts',
+            loudnessStartingLevel:'alternating low/high in shuffled pairs (anchors: randomised)',rangePreviewAfterReference:true,blockedNotIntermingled:true,referenceLevel:'ceiling/10',setupGateEnforced:true,repeatsNeverAdjacent:true,centredLayout:centred,
+            stimulusPresentations:doubleAB?'A,B: every stimulus twice (18 trials each); C-F: one repeated stimulus':'all blocks: one repeated stimulus',
+            referenceVisibleInCalibration:showRef,pxPerMm:pxPerMm?+pxPerMm.toFixed(3):null,
+            biasCancellable:{lineNumber:true,areaNumber:true,loudness:false},
+            deviations:[(showRef?null:'the explicit no-look-back instruction was removed; Lodge 1981 used a booklet whose reference sat on the first page and told respondents not to turn back. The constraint is now structural rather than instructed - the instrument offers no way to revisit an answered trial - but respondents are no longer TOLD to keep the reference in mind, which is the part that did work in the original'),
+                'area is a modern addition, not in Lodge et al.',
+                        'loudness from Lodge et al. 1976, not the 1981 LP+NE survey',
+                        'loudness bias not identifiable (both blocks productions)',
+                        'absolute SPL uncontrolled (no acoustic calibration)','area and line share substantial method variance: the same canvas, the same drag interaction and the same visual-spatial channel, so a display-scaling artefact or motor habit hits both. Area is a validity CHECK on the line/number pair, not an independent third estimate in the way Lodge\u2019s handgrip was',
+                        'inventory headroom is equated in SUBJECTIVE units across modalities (line 20x physical; area 66x physical = 20x subjective at an assumed 0.7 exponent), rather than matching physical ratios',
+                        'area spans 50:1 against line\u2019s 100:1 (subjective range ~1.19 vs ~2.0 log units). By Teghtsoonian\u2019s range rule the compressed range inflates the recovered area exponent \u2014 pushing it toward the very side-length signature the diagnostic tests for. Equating subjective ranges would need ~720:1 in area; the canvas allows 12.7x',
+                        'bias is measured rather than assumed: both directions of each pair are run and the geometric mean cancels regression bias, where Lodge estimated bias on a calibrating continuum and assumed it transferred. A deliberate improvement on the 1981 method, not merely a difference',
+                        'the calibration-derived exponents are nonetheless APPLIED to the inventory responses, where the respondent generates both reference and response and there is no experimenter-controlled stimulus range for regression bias to act on in the usual sense; this transfer is a larger leap than in scale-building and is not corrected for',
+                        'bias factors are estimated within-subject (Cross individual-function route); the +/-2SD outlier screen of the 1981 appendix is a SAMPLE-level step and must be applied downstream across the exported matchingExponents',
+                        `respondent-set references are guided by an on-canvas admissible band computed from the stimulus set (calibration line ${JSON.stringify(bandB())}, calibration area ${JSON.stringify(bandD())}); warnings are advisory, never blocking`,
+                        'line/square placement is a researcher toggle (left-anchored default vs centred); Lodge does not specify placement on the page',
+                        'assigned-modulus mode drops the number-range previews (free mode keeps them), so the two modulus conditions differ in preview exposure as well',
+                        'BFI-2-XS statements are self-descriptions, not the political-opinion items Lodge scaled',
+                        'direction (agree/disagree) is collected for all fifteen items up front, then strength per modality',
+                        fixedOpRef?'the inventory reference is GIVEN, not respondent-produced: a deviation from Lodge 1981 direct scaling, where the respondent drew the reference line and assigned the reference number for every question. Adopted because respondent-set references were reused at the calibration modulus anyway (50 on 13 of 14 items in one pilot), invited clipping, and doubled the screen count':'inventory references are respondent-produced, per Lodge 1981 direct scaling',
+                        'agree-items and disagree-items are blocked separately with a hand-over screen between them; the order is drawn once per session and held constant across modalities, counterbalanced across participants',
+                        'reference and response appear on the same page per item, the response revealed once the reference is set',
+                        'calibration reference redisplayed at the midpoint of the 18-trial blocks (Lodge presented 9 stimuli once each, so never asked for this span)',
+                        'TDH-39 supra-aural transducers not used; consumer headphone response differs'].filter(Boolean)},
+        calibration:{slopes:{A:+S.fA.slope.toFixed(4),B:+S.fB.slope.toFixed(4),C:+S.fC.slope.toFixed(4),
+                             D:+S.fD.slope.toFixed(4),E:S.fE.slope==null?null:+S.fE.slope.toFixed(4),F:S.fF.slope==null?null:+S.fF.slope.toFixed(4)},
+            r2:{A:+S.fA.r2.toFixed(4),B:+S.fB.r2.toFixed(4),C:+S.fC.r2.toFixed(4),D:+S.fD.r2.toFixed(4),E:S.fE.r2==null?null:+S.fE.r2.toFixed(4),F:S.fF.r2==null?null:+S.fF.r2.toFixed(4)},
+            spearman:Object.fromEntries(Object.entries(S.rho).map(([k,v])=>[k,v==null?null:+v.toFixed(4)])),
+            testRetestRatio:S.retest,censoredLoudnessTrials:S.cens,censoredAreaTrials:S.censD,censoredLineTrials:S.censB,
+            slopeCI:{A:[S.fA.lo,S.fA.hi],B:[S.fB.lo,S.fB.hi],C:[S.fC.lo,S.fC.hi],D:[S.fD.lo,S.fD.hi],
+                     E:S.fE.lo==null?null:[S.fE.lo,S.fE.hi],F:S.fF.lo==null?null:[S.fF.lo,S.fF.hi]},
+            matchingExponents:{lineOverNumber:+S.ELN.toFixed(4),areaOverNumber:+S.EAN.toFixed(4)},
+            recoveredAreaExponent:+S.areaExp.toFixed(4),expectedAreaExponent:0.7,
+            areaExponentLandmarks:{sideJudging:0.50,areaJudging:0.70,linearInPhysicalArea:1.00},
+            areaExponentCI:S.areaLo==null?null:[+S.areaLo.toFixed(3),+S.areaHi.toFixed(3)],
+            areaStrategyVerdict:S.strat,
+            regressionBiasPct:{lineNumber:+(100*(S.rbLN-1)).toFixed(1),areaNumber:+(100*(S.rbAN-1)).toFixed(1)},
+            loudnessTransitivity:S.trans==null?null:{predicted:+S.predF.toFixed(4),observed:+S.fF.slope.toFixed(4),ratio:+S.trans.toFixed(4)},
+            conversionExponents:{line:+S.kLine.toFixed(4),number:1,area:+S.kArea.toFixed(4),loudness:S.fF.slope==null?null:+S.kLoud.toFixed(4)},
+
+            trials:{A:aData,B:bData,C:cData,D:dData,E:eData,F:fData}},
+        // fixedOpRef takes precedence: when the reference is GIVEN there is no respondent
+        // reference at all, so neither Lodge branch describes what happened. Reading only
+        // perItemRef here used to claim "held in memory" for a reference that was on screen.
+        referenceMode:fixedOpRef?'given: an experimenter-supplied reference, identical for every item (deviation from Lodge 1981, where the respondent produces it)'
+                     :perItemRef?'fresh reference drawn per item, kept visible beside the response (Lodge 1981 schedule)'
+                                :'one shared reference per modality, held in memory',
+        sharedReferences:perItemRef?null:{linePx:refV.line==null?null:+refV.line.toFixed(1),lineMm:opLineRefMm,number:refV.number,
+                    areaSidePx:refV.area==null?null:+refV.area.toFixed(1),gainLinear:refV.loud==null?null:+refV.loud.toFixed(5)},
+
+        items,dimensions:dims,
+        consistencyCheck:{contradictions:recon.length,resolutions:recon,
+            askedRespondent:useReconcile,
+            note:'direction and category were collected in separate phases; items where they conflict are flagged rather than reconciled silently. askedRespondent records whether the respondent was shown the discrepancy screen: when false the contradictions are still detected and listed, but every resolved is null because nobody was asked.'},
+        categoryVsMagnitudeConsistentOnly:(()=>{const q=usable.filter(x=>!x.inconsistentWithCategory)
+                .map(x=>({x:Math.log10(x.lodgeScaleValue_LPNE),y:Math.log10(x.likertDeparture)}));
+            if(q.length<3)return null;const f=ols(q);
+            return {exponent:+f.slope.toFixed(4),r2:+f.r2.toFixed(4),n:q.length,
+                    ci:f.lo==null?null:[+f.lo.toFixed(3),+f.hi.toFixed(3)],
+                    basis:'contradictory items excluded'};})(),
+        categoryVsMagnitudeCorrected:cmpC?{exponent:+cmpC.slope.toFixed(4),r2:+cmpC.r2.toFixed(4),n:ptsC.length,
+            ci:cmpC.lo==null?null:[+cmpC.lo.toFixed(3),+cmpC.hi.toFixed(3)],
+            basis:'bias-corrected pooled scale values'}:null,
+        categoryVsMagnitude:cmp?{exponent:+cmp.slope.toFixed(4),r2:+cmp.r2.toFixed(4),n:pts.length,
+            ci:cmp.lo==null?null:[+cmp.lo.toFixed(3),+cmp.hi.toFixed(3)],
+            basis:'uncorrected line+number geometric mean (lodgeScaleValue_LPNE)',
+            interpretation:(cmp.r2<0.3||cmp.slope<=0)
+                ?'no interpretable relation \u2014 the two scales do not track each other in these data, so no compression claim can be made'
+                :cmp.slope<0.85?'category ratings compress the magnitude scale (Lodge & Tursky\u2019s central claim)'
+                :cmp.slope>1.15?'category ratings expand relative to magnitude'
+                :'category and magnitude scales are close to linearly related here'}:null,
+        vasVsMagnitude:cmpV?{exponent:+cmpV.slope.toFixed(4),r2:+cmpV.r2.toFixed(4),n:ptsV.length,
+            ci:cmpV.lo==null?null:[+cmpV.lo.toFixed(3),+cmpV.hi.toFixed(3)],
+            basis:'continuous bipolar VAS departure from midpoint vs uncorrected line+number geometric mean',
+            falsifiable:true,
+            note:'Unlike categoryVsMagnitude this fit CAN return 1.0. VAS departure spans up to 50:1 against magnitude ratios spanning ~10-25:1, so an uncompressed respondent is representable. On the 5-point scale departure spans only 2:1 and an exponent near 1.0 is arithmetically unreachable, which makes the category fit uninformative about compression.'}:null,
+        categoryVsVas:cmpD?{exponent:+cmpD.slope.toFixed(4),r2:+cmpD.r2.toFixed(4),n:ptsD.length,
+            ci:cmpD.lo==null?null:[+cmpD.lo.toFixed(3),+cmpD.hi.toFixed(3)],
+            basis:'category departure vs VAS departure -- the same question and the same anchors, discretized or not',
+            note:'Isolates DISCRETIZATION: compression is common to both formats and divides out, so departure from a slope of 1 here is the cost of binning alone.'}:null,
+        resolution:{distinctCategoryValuesUsed:distinctL,distinctVasValuesUsed:distinctV,distinctMagnitudeValuesUsed:distinctM,categoryCeiling:LIK_MAX},
+        notes:'Magnitude ratio = response / reference for the neutral middle position (area squared). magnitude_lodge is the uncorrected line+number geometric mean signed by direction and reverse-keying. categoryVsMagnitude regresses log|likert-3| on log(magnitude ratio) across items: an exponent below 1 reproduces the compression Lodge & Tursky report for category scales.'};
+
+    // ---- display ----
+    let dh='<tr><th>Dimension</th><th>Items</th><th>Category (1\u20135)</th><th>Category centred</th><th>Magnitude (line+number)</th></tr>';
+    dims.forEach(d=>{dh+=`<tr><td>${d.dimension}</td><td>${d.items.join(', ')}</td><td>${d.likert==null?'&mdash;':d.likert}</td>`+
+        `<td>${d.likertCentred==null?'&mdash;':(d.likertCentred>0?'+':'')+d.likertCentred}</td>`+
+        `<td><strong style="color:#159e79;">${d.magnitude_lodge>0?'+':''}${d.magnitude_lodge}</strong></td></tr>`;});
+    $('resDimTable').innerHTML=dh;
+    let h='<tr><th>#</th><th>Item</th><th>Dir</th><th>1\u20135</th>'+opQ.map(m=>`<th>${m}</th>`).join('')+'<th>Magnitude</th></tr>';
+    items.forEach(x=>{h+=`<tr><td>${x.n}</td><td style="text-align:left;">${x.text}${x.reverse?' <em>(R)</em>':''}</td>`+
+        `<td>${x.direction==='neutral'?'&mdash;':x.direction.slice(0,3)}</td><td>${x.likert==null?'&mdash;':x.likert}</td>`+
+        opQ.map(m=>`<td>${x.ratios[m]}</td>`).join('')+
+        `<td><strong>${x.magnitude_lodge>0?'+':''}${x.magnitude_lodge}</strong></td></tr>`;});
+    $('resTable').innerHTML=h;
+    $('scoreLine').innerHTML=`Ten items rated on both scales. Magnitude references were set once per modality `+
+        `(${opQ.join(' + ')}) and reused across items. Order: <strong>${likertFirst?'category scale first':'magnitude first'}</strong>.`;
+    $('resNote').innerHTML=(cmp&&(cmp.r2<0.3||cmp.slope<=0))
+        ? `The category and magnitude scales do not track each other in these data `+
+          `(exponent ${cmp.slope.toFixed(2)}, R\u00b2 ${cmp.r2.toFixed(2)} over ${pts.length} items), so no compression claim can be made. `+
+          `Either the responses are noisy or a modality was not used as a ratio scale &mdash; check the item table before drawing conclusions.`
+        : cmp
+        ? `Regressing log|category &minus; ${LIK_MID}| on log(magnitude ratio) across ${pts.length} non-neutral items gives an exponent of `+
+          `<strong style="color:#159e79;">${cmp.slope.toFixed(2)}</strong> (R\u00b2 ${cmp.r2.toFixed(2)}). `+
+          `An exponent below 1 means the 1\u2013${LIK_MAX} scale <strong>compresses</strong> differences that the magnitude scale keeps &mdash; `+
+          `Lodge &amp; Tursky's central argument for magnitude scaling. `+
+          `You used <strong>${distinctL}</strong> of the ${LIK_MAX} categories, but <strong>${distinctM}</strong> distinct magnitude values.`+
+          (cmp.lo!=null?` 95% CI on the exponent: ${cmp.lo.toFixed(2)}\u2013${cmp.hi.toFixed(2)}.`:'')+
+          (cmpC?` Against <em>bias-corrected</em> magnitudes the exponent is <strong>${cmpC.slope.toFixed(2)}</strong> (R\u00b2 ${cmpC.r2.toFixed(2)}) \u2014 report both, since correction is a power transform.`:'')
+        : 'Not enough non-neutral items with an off-centre category rating to fit the category-vs-magnitude relation.';
+    if(cmpV){
+        $('resNote').innerHTML+=`<br><br><strong>Sliding scale.</strong> Against the continuous VAS the exponent is `+
+            `<strong style="color:#159e79;">${cmpV.slope.toFixed(2)}</strong> (R\u00b2 ${cmpV.r2.toFixed(2)}, ${ptsV.length} items)`+
+            (cmpV.lo!=null?`, 95% CI ${cmpV.lo.toFixed(2)}\u2013${cmpV.hi.toFixed(2)}`:'')+`. `+
+            `<em>This is the one to read.</em> The 1\u2013${LIK_MAX} scale can only express a 2:1 range of departure, so it cannot `+
+            `return an exponent near 1 whatever you answered; the VAS spans about 50:1 and can.`+
+            (cmpD?` Category against VAS \u2014 the same question with and without fixed steps \u2014 gives ${cmpD.slope.toFixed(2)}, which is the cost of <em>binning</em> alone.`:'')+
+            ` You used <strong>${distinctV}</strong> distinct slider positions against <strong>${distinctL}</strong> categories.`;}
+    $('resultsData').textContent=JSON.stringify(payload,null,2);
+    hide('opModality');hide('opDirection');hide('tipiPhase');hide('vasPhase');
+    // A copy in this browser, before anything else can go wrong. It is not a delivery
+    // mechanism, it is the last resort when one fails.
+    try{localStorage.setItem('bfi2xs_last_session',JSON.stringify(payload));}catch(e){}
+    if(DATA_ENDPOINT)deliverSession();
+    else show('resultsPhase');
+}
+function deliverSession(){
+    show('savingPhase');
+    $('saveFail').style.display='none';
+    $('saveHead').textContent='Saving your responses\u2026';
+    $('saveMsg').textContent='Please keep this window open. It will only take a moment.';
+    sendSession(payload).then(r=>{
+        if(r.ok){
+            // Only now is it safe to leave. Without a return URL this is an attended
+            // session, so the results screen is the right place to land.
+            if(returnUrl){$('saveHead').textContent='Saved \u2014 taking you back\u2026';
+                $('saveMsg').textContent='';goTo(withPid(returnUrl));}
+            else{hide('savingPhase');show('resultsPhase');}
+            return;}
+        // Stop here. Redirecting now would send them away from the only remaining copy.
+        $('saveHead').textContent='Your responses have not been saved yet';
+        $('saveMsg').textContent='Something went wrong sending them ('+r.reason+'). '+
+            'Please press Try again. If it still will not go through, press Download and '+
+            'send the file to the researcher \u2014 nothing you did has been lost.';
+        $('saveFail').style.display='block';});}
+$('saveRetry').addEventListener('click',deliverSession);
+$('saveDownload').addEventListener('click',()=>download(
+    'bfi2xs_'+((payload.participant&&payload.participant.id)||'session')+'_'+Date.now()+'.json',
+    JSON.stringify(payload,null,2),'application/json'));
+// ---- researcher fast-forward: auto-answers whatever step is showing ----
+const simNoise=()=>0.85+Math.random()*0.3;
+function fire(inp){inp.dispatchEvent(new Event('input',{bubbles:true}));}
+$('skipBtn').addEventListener('click',()=>{try{
+    if(dwellActive)endDwell();   // researcher fast-forward ignores the dwell
+    const vis=id=>!$(id).classList.contains('hidden');
+    if(vis('setupPhase')){if(useAudio){$('headphoneCheck').checked=true;$('headphoneCheck').dispatchEvent(new Event('change'));
+            setupPlayed=true;louderTicks=20;setupGain=Math.max(setupGain,0.06);}
+        setupGate();$('setCeilingBtn').click();return;}
+    if(vis('calibIntro')){$('calibStart').click();return;}
+    if(vis('previewPhase')){$('prevNext').click();return;}
+    if(vis('blockA')){if(!aInput.disabled){aInput.value=Math.max(1,Math.round(REF_NUMBER*aSeq[aIdx]*simNoise()));fire(aInput);}
+        aNext.disabled=false;aNext.click();return;}
+    if(vis('blockB')){bLen=Math.min(REF_LINE*(bSeq[bIdx]/REF_NUMBER)*simNoise(),1600);setLine($('bResp'),bLen);
+        bConfirm.disabled=false;bConfirm.click();return;}
+    if(vis('blockC')){if(!cInput.disabled){cInput.value=Math.max(1,Math.round(REF_NUMBER*Math.pow(cSeq[cIdx],0.7)*simNoise()));fire(cInput);}
+        cNext.disabled=false;cNext.click();return;}
+    if(vis('blockD')){dSide=Math.min(REF_SIDE*Math.sqrt(dSeq[dIdx]/REF_NUMBER)*simNoise(),AREA_MAXS);setSquare($('dResp'),dSide);
+        dConfirm.disabled=false;dConfirm.click();return;}
+    if(vis('blockE')){eGain=Math.min(Math.max((eAnc||refCalGain)*Math.pow(eSeq[eIdx],1.5)*simNoise(),refCalGain/60),ceilingGain);
+        $('eConfirm').click();return;}
+    if(vis('blockF')){fGain=Math.min(Math.max((fAnc||refCalGain)*Math.pow(fSeq[fIdx]/REF_NUMBER,1.5)*simNoise(),refCalGain/60),ceilingGain);
+        $('fConfirm').click();return;}
+    if(vis('reconcilePhase')){$('reconRows').querySelectorAll('button[data-v=\"direction\"]').forEach(b=>b.click());
+        $('reconNext').disabled=false;$('reconNext').click();return;}
+    if(vis('remindPhase')){$('remindNext').click();return;}
+    if(vis('calibDone')){$('toOpinion').click();return;}
+    if(vis('tipiPhase')){ITEMS.forEach((t,i)=>{likVals[i]=LIK_MIN+Math.floor(Math.random()*LIK_MAX);});
+        $('tipiRows').querySelectorAll('button').forEach(b=>{
+            if(+b.dataset.v===likVals[+b.dataset.i])b.classList.add('sel');});
+        $('tipiNext').disabled=false;$('tipiNext').click();return;}
+    if(vis('vasPhase')){$('vasRows').querySelectorAll('input').forEach(s=>{
+            s.value=(VAS_MIN+Math.random()*(VAS_MAX-VAS_MIN)).toFixed(1);fire(s);});
+        $('vasNext').disabled=false;$('vasNext').click();return;}
+    if(vis('groupIntro')){$('groupNext').click();return;}
+    if(vis('opDirection')){ITEMS.forEach((t,i)=>{opDirs[i]=Math.random()<0.5?'agree':'disagree';});
+        $('dirRows').querySelectorAll('button').forEach(b=>{
+            if(b.dataset.d===opDirs[+b.dataset.i])b.classList.add('sel');});
+        $('dirNext').disabled=false;$('dirNext').click();return;}
+    if(vis('opModality')){const m=opQ[opMi],ref=opStep==='ref';
+        const k=ref?1:(1+Math.random()*4);
+        if(m==='line'){opLineLen=ref?110+Math.random()*80:Math.min((curRef('line')||150)*k,1500);opLineConfirm.disabled=false;opLineConfirm.click();}
+        else if(m==='area'){opAreaSide=ref?85+Math.random()*55:Math.min((curRef('area')||110)*Math.sqrt(k),AREA_MAXS);opAreaConfirm.disabled=false;opAreaConfirm.click();}
+        else if(m==='number'){opNumInput.value=ref?Math.round(10+Math.random()*25):Math.round((curRef('number')||20)*k);fire(opNumInput);opNumConfirm.disabled=false;opNumConfirm.click();}
+        else{opLoudGain=ref?refCalGain*1.2:Math.min((curRef('loud')||refCalGain)*Math.pow(k,1.5),ceilingGain);$('opLoudConfirm').click();}
+        return;}
+}catch(err){console.error('skip:',err);}});
+function download(fn,t,m){const b=new Blob([t],{type:m}),u=URL.createObjectURL(b),a=document.createElement('a');
+    a.href=u;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);}
+function toCSV(p){
+    const mods=p.protocol.opinionModalities;
+    const head=['item','text','dimension','reverse','direction','likert','likert_keyed','likert_departure']
+        .concat(['vas','vas_keyed','vas_departure'],mods.map(m=>m+'_ratio'),mods.map(m=>m+'_numberEquiv'),
+                ['lodge_LPNE','pooled','magnitude_lodge','magnitude_pooled']);
+    const q=v=>'"'+String(v).replace(/"/g,'""')+'"',x=v=>v==null?'':v;
+    const rows=p.items.map(it=>[it.n,q(it.text),q(it.dim),it.reverse,it.direction,x(it.likert),x(it.likertKeyed),x(it.likertDeparture)]
+        .concat([x(it.vas),x(it.vasKeyed),x(it.vasDeparture)],mods.map(m=>x(it.ratios[m])),mods.map(m=>x(it.numberEquiv[m])),
+                [it.lodgeScaleValue_LPNE,it.pooledScaleValue,it.magnitude_lodge,it.magnitude_pooled]).join(','));
+    const c=p.calibration,cv=p.categoryVsMagnitude;
+    const meta=['','# calibration slopes A-F: '+[c.slopes.A,c.slopes.B,c.slopes.C,c.slopes.D,c.slopes.E,c.slopes.F].join(' '),
+        '# E_LN='+c.matchingExponents.lineOverNumber+' area_exponent='+c.recoveredAreaExponent,
+        '# category_vs_magnitude_exponent='+(cv?cv.exponent+' r2='+cv.r2:'n/a'),
+        '# order='+p.protocol.administrationOrder,'# px_per_mm='+x(p.protocol.pxPerMm)];
+    return head.join(',')+'\n'+rows.join('\n')+'\n'+meta.join('\n');}
+$('dlJson').addEventListener('click',()=>download(`bfi2xs_magnitude_${Date.now()}.json`,JSON.stringify(payload,null,2),'application/json'));
+$('dlCsv').addEventListener('click',()=>download(`bfi2xs_magnitude_${Date.now()}.csv`,toCSV(payload),'text/csv'));
+</script>
+</body>
+</html>
